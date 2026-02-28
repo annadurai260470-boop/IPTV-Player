@@ -1,13 +1,26 @@
 import axios from 'axios';
 import { Channel, VODItem, Movie, Series } from '../types/index';
 
-const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
-
+// Create axios instance without baseURL - we'll set it dynamically
 const api = axios.create({
-  baseURL: API_URL,
   headers: {
     'Content-Type': 'application/json'
   }
+});
+
+// Add request interceptor to set URL dynamically at request time
+api.interceptors.request.use((config) => {
+  // Get the current origin at request time (not build time)
+  const baseURL = typeof window !== 'undefined' 
+    ? window.location.origin 
+    : 'http://localhost:5000';
+  
+  // If the URL is relative, prepend the baseURL
+  if (config.url && !config.url.startsWith('http')) {
+    config.url = baseURL + config.url;
+  }
+  
+  return config;
 });
 
 export const fetchChannelCategories = async (): Promise<Channel[]> => {
