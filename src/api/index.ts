@@ -105,8 +105,15 @@ export const createStreamLink = async (cmd: string): Promise<string | null> => {
       
       // For live streams, return the direct URL
       // hls.js will be able to load it with proper CORS handling
-      console.log('✅ Returning direct stream URL for client-side loading');
-      return response.data.url;
+      console.log('✅ Returning stream URL for client-side loading');
+      
+      // Resolve relative URLs to absolute (ensures HTTPS on production)
+      let streamUrl = response.data.url;
+      if (streamUrl.startsWith('/')) {
+        streamUrl = window.location.origin + streamUrl;
+      }
+      console.log('✅ Final stream URL:', streamUrl);
+      return streamUrl;
     } else {
       console.error('❌ Failed to create stream link:', response.data);
       return null;

@@ -15,6 +15,9 @@ const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
 const app = express();
 const PORT = process.env.PORT || config.server.port;
 
+// Trust reverse proxy (Render, Heroku, etc.) so req.protocol returns 'https'
+app.set('trust proxy', 1);
+
 // Enable CORS for all routes
 app.use(cors({
   origin: '*',
@@ -919,13 +922,8 @@ app.get('/stream-link', async (req, res) => {
     
     console.log(`✅ Final stream URL: ${streamUrl}`);
     
-    // Return proxied URL to avoid ORB (Opaque Response Blocking) errors and mixed-content issues
-    // The frontend should use /proxy-stream to access the actual stream
-    // Build full URL dynamically based on request headers (works for both localhost and deployed)
-    const protocol = req.protocol || 'http';
-    const host = req.get('host');
-    const baseUrl = `${protocol}://${host}`;
-    const proxiedUrl = `${baseUrl}/proxy-stream?url=${encodeURIComponent(streamUrl)}`;
+    // Return a relative proxy URL - frontend will prepend its own origin (always HTTPS on Render)
+    const proxiedUrl = `/proxy-stream?url=${encodeURIComponent(streamUrl)}`;
     console.log(`✅ Proxied URL for frontend: ${proxiedUrl}`);
     
     return res.json({
