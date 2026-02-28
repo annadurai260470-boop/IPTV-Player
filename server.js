@@ -923,7 +923,7 @@ app.get('/stream-link', async (req, res) => {
     // The frontend should use /proxy-stream to access the actual stream
     // Build full URL dynamically based on request headers (works for both localhost and deployed)
     const protocol = req.protocol || 'http';
-    const host = req.get('host') || `localhost:${PORT}`;
+    const host = req.get('host');
     const baseUrl = `${protocol}://${host}`;
     const proxiedUrl = `${baseUrl}/proxy-stream?url=${encodeURIComponent(streamUrl)}`;
     console.log(`✅ Proxied URL for frontend: ${proxiedUrl}`);
