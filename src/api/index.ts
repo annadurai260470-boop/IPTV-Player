@@ -1,7 +1,7 @@
 import axios from 'axios';
 import { Channel, VODItem, Movie, Series } from '../types/index';
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const API_URL = import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
 
 const api = axios.create({
   baseURL: API_URL,
