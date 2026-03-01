@@ -27,3 +27,6 @@ dist-ssr
 .env
 .env.local
 .env.*.local
+
+# Local config with credentials (use config.example.json as template)
+config.json

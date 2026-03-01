@@ -1,153 +1,269 @@
-import React, { useState } from 'react';
-import '../styles/ChannelGrid.css';
-import { Channel, VODItem, Episode } from '../types/index';
+import React, { useMemo, useState } from 'react'
+import '../styles/ChannelGrid.css'
+import { Channel, VODItem, Episode } from '../types/index'
+import { FavoriteItem } from '../hooks/useFavorites'
+
+/* ─── Types ──────────────────────────────────────────────── */
+export type SortOrder = 'default' | 'az' | 'za'
 
 interface ChannelGridProps {
-  channels?: Channel[];
-  vod?: VODItem[];
-  onSelectChannel?: (channel: Channel) => void;
-  onSelectVOD?: (item: VODItem) => void;
-  onSelectEpisode?: (episode: Episode, vodTitle: string) => void;
-  type: 'channels' | 'vod';
+  channels?: Channel[]
+  vod?: VODItem[]
+  onSelectChannel?: (channel: Channel) => void
+  onSelectVOD?: (item: VODItem) => void
+  onSelectEpisode?: (episode: Episode, vodTitle: string) => void
+  onToggleFavorite?: (item: FavoriteItem) => void
+  isFavorite?: (id: string) => boolean
+  type: 'channels' | 'vod'
+  isCategory?: boolean
+  categoryType?: 'channels' | 'movies' | 'series' | 'favorites'
+  sortOrder?: SortOrder
+  showSortControls?: boolean
 }
 
+/* ─── Colour palette for category cards ─────────────────── */
+const CAT_COLOURS = ['clr-blue', 'clr-purple', 'clr-teal', 'clr-green', 'clr-orange', 'clr-red']
+const CAT_ICONS   = ['📡', '🎬', '📺', '🌍', '🎭', '⚡', '🏆', '🎵', '🌟', '🎯']
+
+const catColour = (i: number) => CAT_COLOURS[i % CAT_COLOURS.length]
+const catIcon   = (title: string, i: number) => {
+  const t = title.toLowerCase()
+  if (t.includes('sport'))  return '🏆'
+  if (t.includes('news'))   return '📰'
+  if (t.includes('movie') || t.includes('film') || t.includes('cinema')) return '🎬'
+  if (t.includes('kids')  || t.includes('child')) return '🎠'
+  if (t.includes('music'))  return '🎵'
+  if (t.includes('docu'))   return '🌍'
+  if (t.includes('comedy')) return '😄'
+  if (t.includes('action')) return '⚡'
+  return CAT_ICONS[i % CAT_ICONS.length]
+}
+
+/* ─── Image helpers ──────────────────────────────────────── */
+const channelImage = (ch: Channel) => ch.logo || ch.icon || ch.poster || ''
+const vodImage     = (v: VODItem)  => v.poster || v.screenshot_uri || v.cover_big || v.img || ''
+
+/* ─── Sort helper ────────────────────────────────────────── */
+function sortItems<T extends { title?: string; name?: string }>(
+  items: T[],
+  order: SortOrder
+): T[] {
+  if (order === 'default') return items
+  return [...items].sort((a, b) => {
+    const ta = (a.title || a.name || '').toLowerCase()
+    const tb = (b.title || b.name || '').toLowerCase()
+    return order === 'az' ? ta.localeCompare(tb) : tb.localeCompare(ta)
+  })
+}
+
+/* ─── Heart button ───────────────────────────────────────── */
+interface HeartBtnProps {
+  active: boolean
+  onClick: (e: React.MouseEvent) => void
+}
+const HeartBtn: React.FC<HeartBtnProps> = ({ active, onClick }) => (
+  <button
+    className={`fav-btn ${active ? 'fav-btn--active' : ''}`}
+    onClick={onClick}
+    title={active ? 'Remove from favourites' : 'Add to favourites'}
+  >
+    {active ? '❤️' : '🤍'}
+  </button>
+)
+
+/* ─── Main Component ─────────────────────────────────────── */
 export const ChannelGrid: React.FC<ChannelGridProps> = ({
-  channels = [],
-  vod = [],
+  channels  = [],
+  vod       = [],
   onSelectChannel,
   onSelectVOD,
   onSelectEpisode,
-  type
+  onToggleFavorite,
+  isFavorite = () => false,
+  type,
+  isCategory = false,
+  categoryType,
+  sortOrder  = 'default',
+  showSortControls = false,
 }) => {
-  const [expandedItems, setExpandedItems] = useState<string | null>(null);
+  const [localSort, setLocalSort] = useState<SortOrder>(sortOrder)
+  const effectiveSort = showSortControls ? localSort : sortOrder
 
-  // Debug logging
-  React.useEffect(() => {
-    if (type === 'channels') {
-      console.log('🔍 ChannelGrid channels prop updated:', {
-        channelsLength: channels.length,
-        firstChannel: channels[0],
-        allChannels: channels
-      });
+  // All hooks must be called unconditionally at top level
+  const sortedChannels = useMemo(() => sortItems(channels, effectiveSort), [channels, effectiveSort])
+  const sortedVOD      = useMemo(() => sortItems(vod,      effectiveSort), [vod,      effectiveSort])
+
+  /* ---------- CHANNELS ---------- */
+  if (type === 'channels') {
+    if (sortedChannels.length === 0) {
+      return (
+        <div className="empty-state">
+          <p>📡</p>
+          <p>No channels found</p>
+        </div>
+      )
     }
-  }, [channels, type]);
+
+    return (
+      <div className="channel-grid">
+        {showSortControls && <SortBar sort={localSort} onSort={setLocalSort} count={sortedChannels.length} />}
+        <div className={`grid-container${!isCategory ? ' poster-grid' : ''}`}>
+          {sortedChannels.map((ch, i) => {
+            const title  = ch.title || ch.name || 'Channel'
+            const imgSrc = channelImage(ch)
+            const faved  = isFavorite(String(ch.id))
+
+            /* ── Category card ── */
+            if (isCategory) {
+              return (
+                <div key={ch.id ?? i} className="grid-item category-item"
+                  onClick={() => onSelectChannel?.(ch)}>
+                  <div className="item-image">
+                    <div className={`category-face ${catColour(i)}`}>
+                      <span className="cat-icon">{catIcon(title, i)}</span>
+                      <span className="cat-name">{title}</span>
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+
+            /* ── Channel card ── */
+            return (
+              <div key={ch.id ?? i} className="grid-item channel-item"
+                onClick={() => onSelectChannel?.(ch)}>
+                <div className="item-image">
+                  {imgSrc ? (
+                    <img src={imgSrc} alt={title} loading="lazy"
+                      onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                  ) : (
+                    <div className={`category-face ${catColour(i)}`}>
+                      <span className="cat-icon">📡</span>
+                      <span className="cat-name">{title}</span>
+                    </div>
+                  )}
+                  {imgSrc && (
+                    <div className="item-overlay">
+                      <div className="item-overlay-title">{title}</div>
+                    </div>
+                  )}
+                  <div className="play-overlay">▶</div>
+                  {onToggleFavorite && (
+                    <HeartBtn active={faved} onClick={e => {
+                      e.stopPropagation()
+                      onToggleFavorite({ id: String(ch.id), title, image: imgSrc, type: 'channel', cmd: ch.cmd, addedAt: 0 })
+                    }} />
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  /* ---------- VOD / SERIES ---------- */
+  if (sortedVOD.length === 0) {
+    return (
+      <div className="empty-state">
+        <p>{categoryType === 'series' ? '📺' : categoryType === 'favorites' ? '❤️' : '🎬'}</p>
+        <p>No {categoryType === 'series' ? 'series' : categoryType === 'favorites' ? 'favourites yet' : 'movies'} found</p>
+      </div>
+    )
+  }
 
   return (
     <div className="channel-grid">
-      {type === 'channels' && channels.length > 0 && (
-        <div className="grid-container">
-          {channels.map((channel, index) => {
-            // Categories have 'title' field, channels have 'name' field
-            const displayTitle = channel.name || channel.title || `Channel ${index}`;
-            const displayId = channel.id || `test-${index}`;
-            
-            // Test: Different color for each item
-            const testColors = ['#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8'];
-            const bgColor = testColors[index % testColors.length];
-            
-            console.log(`🎬 Rendering Channel ${index}:`, {
-              channelName: channel.name,
-              displayTitle,
-              displayId,
-              hasTitle: !!channel.title,
-              hasName: !!channel.name,
-              hasIcon: !!channel.icon,
-              hasPoster: !!channel.poster,
-              channel_id_value: channel.id,
-              channel_title_value: channel.title
-            });
-            
+      {showSortControls && <SortBar sort={localSort} onSort={setLocalSort} count={sortedVOD.length} />}
+      <div className={`grid-container${!isCategory ? ' poster-grid' : ''}`}>
+        {sortedVOD.map((item, i) => {
+          const title  = item.name || item.title || 'Untitled'
+          const imgSrc = vodImage(item)
+          const faved  = isFavorite(String(item.id))
+
+          /* ── VOD/Series Category card ── */
+          if (isCategory) {
             return (
-              <div
-                key={displayId}
-                className="grid-item channel-item"
-                onClick={() => onSelectChannel?.(channel)}
-                style={{ cursor: 'pointer', minHeight: '220px' }}
-              >
-                <div className="item-image" style={{ backgroundColor: bgColor, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  {channel.icon || channel.poster ? (
-                    <img
-                      src={channel.icon || channel.poster}
-                      alt={displayTitle}
-                      loading="lazy"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = 'none';
-                      }}
-                    />
+              <div key={item.id ?? i} className="grid-item category-item"
+                onClick={() => onSelectVOD?.(item)}>
+                <div className="item-image">
+                  {imgSrc ? (
+                    <>
+                      <img src={imgSrc} alt={title} loading="lazy"
+                        onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                      <div className="item-overlay">
+                        <div className="item-overlay-title">{title}</div>
+                      </div>
+                    </>
                   ) : (
-                    <div style={{ textAlign: 'center', color: '#fff', padding: '10px', fontWeight: 'bold' }}>
-                      <div style={{ fontSize: '32px', marginBottom: '8px' }}>📺</div>
-                      <div style={{ fontSize: '12px', wordBreak: 'break-word' }}>{displayTitle}</div>
+                    <div className={`category-face ${catColour(i)}`}>
+                      <span className="cat-icon">{catIcon(title, i)}</span>
+                      <span className="cat-name">{title}</span>
                     </div>
                   )}
                 </div>
-                <div className="item-title" style={{ minHeight: '40px', fontWeight: 'bold', fontSize: '14px' }}>{displayTitle}</div>
               </div>
-            );
-          })}
-        </div>
-      )}
+            )
+          }
 
-      {type === 'vod' && vod.length > 0 && (
-        <div className="grid-container">
-          {vod.map((item) => (
-            <div key={item.id} className="vod-container">
-              <div
-                className={`grid-item vod-item ${item.episodes ? 'series-item' : 'movie-item'}`}
-                onClick={() => {
-                  if (item.episodes && item.episodes.length > 0) {
-                    // Series with episodes - toggle expansion
-                    setExpandedItems(expandedItems === item.id ? null : item.id);
-                  } else {
-                    // Direct movie or single content
-                    onSelectVOD?.(item);
-                  }
-                }}
-              >
-                <div className="item-image">
-                  <img
-                    src={item.poster || 'https://via.placeholder.com/200?text=VOD'}
-                    alt={item.title}
-                    loading="lazy"
-                  />
-                  {!item.episodes && <div className="play-overlay">▶</div>}
+          /* ── Actual VOD / Series item ── */
+          return (
+            <div key={item.id ?? i} className="grid-item vod-container movie-item"
+              onClick={() => onSelectVOD?.(item)}>
+              <div className="item-image">
+                {imgSrc ? (
+                  <img src={imgSrc} alt={title} loading="lazy"
+                    onError={e => { (e.currentTarget as HTMLImageElement).style.display = 'none' }} />
+                ) : (
+                  <div className={`category-face ${catColour(i)}`}>
+                    <span className="cat-icon">{categoryType === 'series' ? '📺' : categoryType === 'favorites' ? '❤️' : '🎬'}</span>
+                    <span className="cat-name">{title}</span>
+                  </div>
+                )}
+                <div className="item-overlay">
+                  <div className="item-overlay-title">{title}</div>
                 </div>
-                <div className="item-title">{item.title}</div>
+                <div className="play-overlay">▶</div>
+                {onToggleFavorite && (
+                  <HeartBtn active={faved} onClick={e => {
+                    e.stopPropagation()
+                    const vodType = categoryType === 'series' ? 'series' : 'movie'
+                    onToggleFavorite({ id: String(item.id), title, image: imgSrc, type: vodType, cmd: item.cmd, addedAt: 0 })
+                  }} />
+                )}
               </div>
-              {item.episodes && expandedItems === item.id && (
+              {item.episodes && item.episodes.length > 0 && (
                 <div className="episodes-list">
-                  {item.episodes.map((episode) => (
-                    <div
-                      key={episode.id}
-                      className="episode-item"
-                      onClick={() =>
-                        onSelectEpisode?.(episode, item.title)
-                      }
-                    >
-                      <span className="episode-number">
-                        Ep {episode.id}
-                      </span>
-                      <span className="episode-title">{episode.title}</span>
+                  {item.episodes.map((ep, ei) => (
+                    <div key={ep.id ?? ei} className="episode-item"
+                      onClick={e => { e.stopPropagation(); onSelectEpisode?.(ep, title) }}>
+                      <span className="episode-number">Ep {ei + 1}</span>
+                      <span className="episode-title">{ep.title}</span>
                     </div>
                   ))}
                 </div>
               )}
             </div>
-          ))}
-        </div>
-      )}
-
-      {((type === 'channels' && channels.length === 0) ||
-        (type === 'vod' && vod.length === 0)) && (
-        <div className="empty-state">
-          <p>No {type === 'vod' ? 'VOD content' : 'channels'} available</p>
-          <p style={{ fontSize: '0.9em', color: '#999', marginTop: '10px' }}>
-            {type === 'channels' ? 'Click to load channels data...' : 'Loading VOD data...'}
-          </p>
-        </div>
-      )}
+          )
+        })}
+      </div>
     </div>
-  );
-};
+  )
+}
+
+/* ─── Sort bar component ─────────────────────────────────── */
+const SortBar: React.FC<{ sort: SortOrder; onSort: (s: SortOrder) => void; count: number }> = ({ sort, onSort, count }) => (
+  <div className="sort-bar">
+    <span className="sort-count">{count} item{count !== 1 ? 's' : ''}</span>
+    <div className="sort-btns">
+      <button className={`sort-btn ${sort === 'default' ? 'active' : ''}`} onClick={() => onSort('default')}>Default</button>
+      <button className={`sort-btn ${sort === 'az' ? 'active' : ''}`} onClick={() => onSort('az')}>A → Z</button>
+      <button className={`sort-btn ${sort === 'za' ? 'active' : ''}`} onClick={() => onSort('za')}>Z → A</button>
+    </div>
+  </div>
+)
+
+export default ChannelGrid
 
 

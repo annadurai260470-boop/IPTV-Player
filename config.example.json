@@ -1,0 +1,22 @@
+{
+  "portal": {
+    "url": "http://your-portal-url/portal.php",
+    "mac": "00:00:00:00:00:00",
+    "token": "YOUR_TOKEN_HERE",
+    "prehash": "YOUR_PREHASH_HERE",
+    "deviceId": "YOUR_DEVICE_ID_HERE",
+    "serialNumber": "YOUR_SERIAL_NUMBER",
+    "signature": "YOUR_SIGNATURE_HERE",
+    "maxConnections": 10000,
+    "expireDate": "2030-01-01 00:00:00",
+    "createdDate": "2020-01-01 00:00:00"
+  },
+  "server": {
+    "port": 5000,
+    "host": "localhost"
+  },
+  "api": {
+    "timeout": 10000,
+    "retries": 3
+  }
+}

@@ -8,9 +8,47 @@ import fetch from 'node-fetch';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Load configuration
+// Load configuration – prefer environment variables; config.json is optional (local dev only)
 const configPath = path.join(__dirname, 'config.json');
-const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+
+let config = {
+  portal: {
+    url:           '',
+    mac:           '',
+    token:         '',
+    prehash:       '',
+    deviceId:      '',
+    serialNumber:  '',
+    signature:     '',
+    maxConnections: 10000,
+    expireDate:    '',
+    createdDate:   ''
+  },
+  server: { port: 5000, host: 'localhost' },
+  api:    { timeout: 10000, retries: 3 }
+};
+
+try {
+  const fileConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  config = {
+    ...config,
+    ...fileConfig,
+    portal: { ...config.portal, ...fileConfig.portal },
+    server: { ...config.server, ...fileConfig.server },
+    api:    { ...config.api,    ...fileConfig.api }
+  };
+} catch (_) {
+  console.log('ℹ️  config.json not found – using environment variables only');
+}
+
+// Environment variables always take priority over config.json
+if (process.env.PORTAL_URL)       config.portal.url          = process.env.PORTAL_URL;
+if (process.env.PORTAL_MAC)       config.portal.mac          = process.env.PORTAL_MAC;
+if (process.env.PORTAL_TOKEN)     config.portal.token        = process.env.PORTAL_TOKEN;
+if (process.env.PORTAL_PREHASH)   config.portal.prehash      = process.env.PORTAL_PREHASH;
+if (process.env.PORTAL_DEVICE_ID) config.portal.deviceId     = process.env.PORTAL_DEVICE_ID;
+if (process.env.PORTAL_SERIAL)    config.portal.serialNumber = process.env.PORTAL_SERIAL;
+if (process.env.PORTAL_SIGNATURE) config.portal.signature    = process.env.PORTAL_SIGNATURE;
 
 const app = express();
 const PORT = process.env.PORT || config.server.port;
@@ -51,8 +89,8 @@ async function portalHandshake() {
       'deviceVersion': '',
       'type': 'stb',
       'action': 'handshake',
-      'token': config.portal.token || 'AAFA5EFF673835478D4EE0FF788CF1CA',
-      'prehash': config.portal.prehash || '9d5ed25bde636a0bdbeb3ce148de680843588c04',
+      'token': config.portal.token,
+      'prehash': config.portal.prehash,
       'JsHttpRequest': '1-xml'
     });
 
@@ -625,6 +663,13 @@ app.get('/vod', async (req, res) => {
       console.log(`🎬 Extracted ${vodCategories.length} VOD categories from portal response`);
       
       if (vodCategories.length > 0) {
+        // Log first category to see available fields
+        console.log(`📝 Sample category fields:`, Object.keys(vodCategories[0]));
+        console.log(`📝 First category:`, JSON.stringify(vodCategories[0]).substring(0, 200));
+        
+        // Log ALL titles to see what categories we have
+        console.log(`📋 ALL VOD category titles from portal:`, vodCategories.map(c => c.title).join(', '));
+        
         // Transform categories into VOD items - skip "All" category (id: *)
         const vodItems = vodCategories
           .filter(category => category.id !== '*')
@@ -633,10 +678,12 @@ app.get('/vod', async (req, res) => {
             title: category.title,
             alias: category.alias,
             censored: category.censored,
-            poster: category.poster || 'https://via.placeholder.com/200x300?text=' + encodeURIComponent(category.title)
+            poster: category.poster || category.screenshot_uri || category.cover_big || category.img || 
+                   'https://via.placeholder.com/200x300?text=' + encodeURIComponent(category.title)
           }));
         
         console.log(`\n✅ Sending ${vodItems.length} VOD items to frontend`);
+        console.log(`📤 Titles being sent:`, vodItems.slice(0, 10).map(v => v.title).join(', '));
         return res.json({
           status: 'ok',
           source: 'portal',
@@ -758,6 +805,505 @@ app.get('/vod', async (req, res) => {
   });
 });
 
+// Get Series categories
+app.get('/series', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('🎯 Received request for: /series');
+  console.log('═'.repeat(70));
+  
+  try {
+    // Perform authentication once (will use cache on subsequent calls)
+    const profileData = await getPortalUserProfile();
+    
+    if (!profileData) {
+      console.log('⚠️  Authentication failed, using empty series');
+      throw new Error('Auth failed');
+    }
+    
+    // Fetch Series categories
+    const portalData = await callPortalAPIWithAuth('get_categories', { type: 'series' });
+    
+    if (portalData && portalData.js) {
+      console.log(`\n✅ Portal data received:`, portalData.js.length, 'Series categories');
+      
+      const seriesCategories = portalData.js || [];
+      console.log(`📺 Extracted ${seriesCategories.length} Series categories from portal response`);
+      
+      if (seriesCategories.length > 0) {
+        // Log first category to see available fields
+        console.log(`📝 Sample series category fields:`, Object.keys(seriesCategories[0]));
+        console.log(`📝 First series category:`, JSON.stringify(seriesCategories[0]).substring(0, 200));
+        console.log(`📋 ALL Series category titles:`, seriesCategories.map(c => c.title).join(', '));
+        
+        // Transform categories - skip "All" category (id: *)
+        const seriesItems = seriesCategories
+          .filter(category => category.id !== '*')
+          .map(category => ({
+            id: category.id,
+            title: category.title,
+            alias: category.alias,
+            censored: category.censored,
+            poster: category.poster || category.screenshot_uri || category.cover_big || category.img
+          }));
+        
+        console.log(`\n✅ Sending ${seriesItems.length} Series items to frontend`);
+        return res.json({
+          status: 'ok',
+          source: 'portal',
+          series: seriesItems
+        });
+      }
+    }
+  } catch (error) {
+    console.error(`❌ Failed to fetch Series content: ${error.message}`);
+  }
+
+  // Fallback to empty array
+  console.log('⚠️  Using empty series array');
+  res.json({
+    status: 'ok',
+    source: 'fallback',
+    series: []
+  });
+});
+
+// Get VOD items by category ID with pagination
+app.get('/vod/:categoryId', async (req, res) => {
+  const { categoryId } = req.params;
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🎯 Received request for: /vod/${categoryId}`);
+  console.log('═'.repeat(70));
+  
+  try {
+    // First authenticate and get profile
+    const profileData = await getPortalUserProfile();
+    
+    if (!profileData) {
+      console.log('⚠️  Authentication failed');
+      throw new Error('Auth failed');
+    }
+    
+    // Fetch first page to get pagination info
+    const firstPageData = await callPortalAPIWithAuth('get_ordered_list', { 
+      type: 'vod',
+      movie_id: '0',
+      category: categoryId,
+      season_id: '0',
+      episode_id: '0',
+      force_ch_link_check: '',
+      from_ch_id: '0',
+      fav: '0',
+      sortby: 'added',
+      hd: '0',
+      not_ended: '0',
+      p: '1'
+    });
+    
+    // Handle the response structure - items are in js.data
+    const itemsArray = firstPageData?.js?.data || firstPageData?.js || [];
+    
+    if (!itemsArray || !Array.isArray(itemsArray) || itemsArray.length === 0) {
+      console.log(`⚠️  Portal did not return items for VOD category ${categoryId}`);
+      console.log(`📝 Response structure:`, JSON.stringify(firstPageData).substring(0, 200));
+      return res.json({
+        status: 'ok',
+        source: 'portal',
+        categoryId: categoryId,
+        items: []
+      });
+    }
+    
+    // Collect items from first page
+    let allItems = [...itemsArray];
+    console.log(`📄 Page 1: Got ${itemsArray.length} items`);
+    
+    // Get pagination info from the js object
+    const paginationInfo = firstPageData?.js || {};
+    const totalItems = parseInt(paginationInfo.total_items || 0);
+    const pageSize = parseInt(paginationInfo.max_page_items || 14);
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    console.log(`📊 Pagination Info: ${totalItems} total items, ${pageSize} per page, ${totalPages} total pages`);
+    
+    // Fetch remaining pages if needed (limit to reasonable amount)
+    const maxPagesToFetch = Math.min(totalPages, 10); // Limit to 10 pages max for performance
+    if (maxPagesToFetch > 1) {
+      console.log(`📡 Fetching pages 2-${maxPagesToFetch}...`);
+      for (let page = 2; page <= maxPagesToFetch; page++) {
+        const pageData = await callPortalAPIWithAuth('get_ordered_list', { 
+          type: 'vod',
+          movie_id: '0',
+          category: categoryId,
+          season_id: '0',
+          episode_id: '0',
+          force_ch_link_check: '',
+          from_ch_id: '0',
+          fav: '0',
+          sortby: 'added',
+          hd: '0',
+          not_ended: '0',
+          p: String(page)
+        });
+        
+        const pageItems = pageData?.js?.data || pageData?.js || [];
+        if (pageItems && Array.isArray(pageItems) && pageItems.length > 0) {
+          allItems = allItems.concat(pageItems);
+          console.log(`📄 Page ${page}: Got ${pageItems.length} items (total so far: ${allItems.length})`);
+        } else {
+          console.log(`⚠️  Page ${page}: No data received`);
+        }
+      }
+    }
+    
+    console.log(`\n✅ Total items fetched: ${allItems.length}`);
+    
+    // Log first item to see available fields
+    if (allItems.length > 0) {
+      console.log(`📝 Sample VOD item fields:`, Object.keys(allItems[0]));
+      console.log(`📝 First item screenshot_uri:`, allItems[0].screenshot_uri);
+      console.log(`📝 First item cover_big:`, allItems[0].cover_big);
+      console.log(`📝 First item img:`, allItems[0].img);
+      console.log(`📝 Full first item:`, JSON.stringify(allItems[0]).substring(0, 500));
+    }
+    
+    console.log(`✅ Sending ${allItems.length} VOD items to frontend (all fields preserved)`);
+    
+    return res.json({
+      status: 'ok',
+      source: 'portal',
+      categoryId: categoryId,
+      total_items: totalItems,
+      max_page_items: pageSize,
+      total_pages: totalPages,
+      items: allItems  // Send all fields as-is from the portal
+    });
+    
+  } catch (error) {
+    console.error(`❌ Failed to fetch VOD items: ${error.message}`);
+  }
+
+  // Return empty if no data
+  console.log(`❌ No items available for VOD category ${categoryId}`);
+  res.json({
+    status: 'ok',
+    source: 'portal',
+    categoryId: categoryId,
+    items: []
+  });
+});
+
+// Get Series items by category ID
+app.get('/series/:categoryId', async (req, res) => {
+  const categoryId = req.params.categoryId;
+  console.log(`\n📺 Fetching series items for category: ${categoryId}`);
+  
+  try {
+    // Fetch first page - using official Stalker Portal parameters
+    const firstPageData = await callPortalAPIWithAuth('get_ordered_list', { 
+      type: 'series',
+      movie_id: '0',
+      category: categoryId,
+      season_id: '0',
+      episode_id: '0',
+      force_ch_link_check: '',
+      from_ch_id: '0',
+      fav: '0',
+      sortby: 'added',
+      hd: '0',
+      not_ended: '0',
+      p: '1'
+    });
+    
+    const itemsArray = firstPageData?.js?.data || firstPageData?.js || [];
+    
+    if (!itemsArray || !Array.isArray(itemsArray) || itemsArray.length === 0) {
+      console.log(`⚠️  Portal did not return items for Series category ${categoryId}`);
+      return res.json({
+        status: 'ok',
+        source: 'portal',
+        categoryId: categoryId,
+        items: []
+      });
+    }
+    
+    let allItems = [...itemsArray];
+    console.log(`📄 Page 1: Got ${itemsArray.length} series items`);
+    
+    // Get pagination info
+    const paginationInfo = firstPageData?.js || {};
+    const totalItems = parseInt(paginationInfo.total_items || 0);
+    const pageSize = parseInt(paginationInfo.max_page_items || 14);
+    const totalPages = Math.ceil(totalItems / pageSize);
+    
+    console.log(`📊 Pagination Info: ${totalItems} total items, ${pageSize} per page, ${totalPages} total pages`);
+    
+    // Fetch remaining pages (limit to 10 pages for performance)
+    const maxPagesToFetch = Math.min(totalPages, 10);
+    if (maxPagesToFetch > 1) {
+      console.log(`📡 Fetching pages 2-${maxPagesToFetch}...`);
+      for (let page = 2; page <= maxPagesToFetch; page++) {
+        const pageData = await callPortalAPIWithAuth('get_ordered_list', { 
+          type: 'series',
+          movie_id: '0',
+          category: categoryId,
+          season_id: '0',
+          episode_id: '0',
+          force_ch_link_check: '',
+          from_ch_id: '0',
+          fav: '0',
+          sortby: 'added',
+          hd: '0',
+          not_ended: '0',
+          p: String(page)
+        });
+        
+        const pageItems = pageData?.js?.data || pageData?.js || [];
+        if (pageItems && Array.isArray(pageItems) && pageItems.length > 0) {
+          allItems = allItems.concat(pageItems);
+          console.log(`📄 Page ${page}: Got ${pageItems.length} items (total so far: ${allItems.length})`);
+        }
+      }
+    }
+    
+    console.log(`\n✅ Total series items fetched: ${allItems.length}`);
+    
+    if (allItems.length > 0) {
+      console.log(`📝 First series item:`, JSON.stringify(allItems[0]).substring(0, 300));
+      console.log(`🆔 First series ID fields:`, {
+        id: allItems[0].id,
+        video_id: allItems[0].video_id,
+        series_id: allItems[0].series_id,
+        category_id: allItems[0].category_id
+      });
+    }
+    
+    return res.json({
+      status: 'ok',
+      source: 'portal',
+      categoryId: categoryId,
+      total_items: totalItems,
+      items: allItems
+    });
+    
+  } catch (error) {
+    console.error(`❌ Failed to fetch Series items: ${error.message}`);
+  }
+
+  res.json({
+    status: 'ok',
+    source: 'portal',
+    categoryId: categoryId,
+    items: []
+  });
+});
+
+// Get seasons for a specific series
+app.get('/series/:seriesId/seasons', async (req, res) => {
+  const { seriesId } = req.params;
+  const categoryId = req.query.category || '*';
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🎯 Received request for: /series/${seriesId}/seasons`);
+  console.log(`📂 Category: ${categoryId}`);
+  console.log(`🆔 Series ID from URL: ${seriesId}`);
+  console.log(`🎬 Will use movie_id format: ${seriesId}:${seriesId}`);
+  console.log('═'.repeat(70));
+  
+  try {
+    // First authenticate and get profile
+    const profileData = await getPortalUserProfile();
+    
+    if (!profileData) {
+      console.log('⚠️  Authentication failed');
+      throw new Error('Auth failed');
+    }
+    
+    // Fetch seasons using movie_id in format "id:id"
+    console.log(`🎬 Fetching seasons for series ID: ${seriesId}`);
+    console.log(`📋 Using movie_id format: ${seriesId}:${seriesId}`);
+    
+    const requestParams = { 
+      type: 'series',
+      movie_id: `${seriesId}:${seriesId}`,
+      category: categoryId,
+      season_id: '0',
+      episode_id: '0',
+      force_ch_link_check: '',
+      from_ch_id: '0',
+      fav: '0',
+      sortby: 'added',
+      hd: '0',
+      not_ended: '0',
+      p: '1'
+    };
+    
+    console.log('📤 Portal API Request params:', JSON.stringify(requestParams, null, 2));
+    
+    const seasonsData = await callPortalAPIWithAuth('get_ordered_list', requestParams);
+    
+    console.log('✅ Received seasons data from Portal API');
+    
+    // Extract seasons from nested structure
+    const seasons = seasonsData?.js?.data || seasonsData?.data || [];
+    
+    console.log(`📊 Found ${seasons.length} seasons`);
+    console.log('─'.repeat(70));
+    
+    return res.json({
+      status: 'ok',
+      source: 'portal',
+      seriesId: seriesId,
+      seasons: seasons
+    });
+    
+  } catch (error) {
+    console.error(`❌ Failed to fetch seasons: ${error.message}`);
+  }
+
+  res.json({
+    status: 'ok',
+    source: 'portal',
+    seriesId: seriesId,
+    seasons: []
+  });
+});
+
+// Get episodes for a specific season
+app.get('/series/:seriesId/seasons/:seasonId/episodes', async (req, res) => {
+  const { seriesId, seasonId } = req.params;
+  const categoryId = req.query.category || '*';
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🎯 Received request for: /series/${seriesId}/seasons/${seasonId}/episodes`);
+  console.log(`📂 Category: ${categoryId}`);
+  console.log(`🎬 Series ID: ${seriesId}, Season ID: ${seasonId}`);
+  console.log('═'.repeat(70));
+  
+  try {
+    // First authenticate and get profile
+    const profileData = await getPortalUserProfile();
+    
+    if (!profileData) {
+      console.log('⚠️  Authentication failed');
+      throw new Error('Auth failed');
+    }
+    
+    // Fetch episodes using movie_id and season_id
+    console.log(`📡 Fetching episodes with movie_id=${seriesId}:${seriesId}, season_id=${seasonId}`);
+    
+    const episodesData = await callPortalAPIWithAuth('get_ordered_list', { 
+      type: 'series',
+      movie_id: `${seriesId}:${seriesId}`,
+      category: categoryId,
+      season_id: seasonId,
+      episode_id: '0',
+      force_ch_link_check: '',
+      from_ch_id: '0',
+      fav: '0',
+      sortby: 'added',
+      hd: '0',
+      not_ended: '0',
+      p: '1'
+    });
+    
+    console.log('✅ Received episodes data from Portal API');
+    
+    // Extract episodes from nested structure
+    const episodes = episodesData?.js?.data || episodesData?.data || [];
+    
+    console.log(`📺 Found ${episodes.length} episodes`);
+    console.log('─'.repeat(70));
+    
+    return res.json({
+      status: 'ok',
+      source: 'portal',
+      seriesId: seriesId,
+      seasonId: seasonId,
+      episodes: episodes
+    });
+    
+  } catch (error) {
+    console.error(`❌ Failed to fetch episodes: ${error.message}`);
+  }
+
+  res.json({
+    status: 'ok',
+    source: 'portal',
+    seriesId: seriesId,
+    seasonId: seasonId,
+    episodes: []
+  });
+});
+
+// Get episode details with stream command
+app.get('/series/:seriesId/seasons/:seasonId/episodes/:episodeId', async (req, res) => {
+  const { seriesId, seasonId, episodeId } = req.params;
+  const categoryId = req.query.category || '*';
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🎯 Received request for episode details`);
+  console.log(`🎬 Series ID: ${seriesId}, Season ID: ${seasonId}, Episode ID: ${episodeId}`);
+  console.log(`📂 Category: ${categoryId}`);
+  console.log('═'.repeat(70));
+  
+  try {
+    // First authenticate and get profile
+    const profileData = await getPortalUserProfile();
+    
+    if (!profileData) {
+      console.log('⚠️  Authentication failed');
+      throw new Error('Auth failed');
+    }
+    
+    // Fetch episode details with cmd
+    console.log(`📡 Fetching episode details with movie_id=${seriesId}:${seriesId}, season_id=${seasonId}, episode_id=${episodeId}`);
+    
+    const episodeData = await callPortalAPIWithAuth('get_ordered_list', { 
+      type: 'series',
+      movie_id: `${seriesId}:${seriesId}`,
+      category: categoryId,
+      season_id: seasonId,
+      episode_id: episodeId,
+      force_ch_link_check: '',
+      from_ch_id: '0',
+      fav: '0',
+      sortby: 'added',
+      hd: '0',
+      not_ended: '0',
+      p: '1'
+    });
+    
+    console.log('✅ Received episode data from Portal API');
+    
+    // Extract episode from nested structure - should be a single item or first item
+    const episodes = episodeData?.js?.data || episodeData?.data || [];
+    const episode = episodes[0] || null;
+    
+    if (episode) {
+      console.log(`📺 Episode found: ${episode.name || 'Unknown'}`);
+      console.log(`🎮 Has cmd: ${!!episode.cmd}`);
+    } else {
+      console.log('⚠️  Episode not found in response');
+    }
+    console.log('─'.repeat(70));
+    
+    return res.json({
+      status: 'ok',
+      source: 'portal',
+      episode: episode
+    });
+    
+  } catch (error) {
+    console.error(`❌ Failed to fetch episode details: ${error.message}`);
+  }
+
+  res.json({
+    status: 'ok',
+    source: 'portal',
+    episode: null
+  });
+});
 
 // Legacy movie endpoint - for backward compatibility
 app.get('/movies', async (req, res) => {
@@ -861,7 +1407,16 @@ app.get('/channels/:categoryId', async (req, res) => {
     }
     
     console.log(`\n✅ Total channels fetched: ${allChannels.length}`);
-    console.log(`✅ Sending ${allChannels.length} channels to frontend`);
+    
+    // Map channel images properly
+    const mappedChannels = allChannels.map(channel => ({
+      ...channel,
+      // Map image fields - portal uses 'logo' for channels
+      icon: channel.logo || channel.icon,
+      poster: channel.logo || channel.icon || channel.poster
+    }));
+    
+    console.log(`✅ Sending ${mappedChannels.length} channels to frontend`);
     
     return res.json({
       status: 'ok',
@@ -870,7 +1425,7 @@ app.get('/channels/:categoryId', async (req, res) => {
       total_items: totalItems,
       max_page_items: pageSize,
       total_pages: totalPages,
-      channels: allChannels
+      channels: mappedChannels
     });
     
   } catch (error) {
@@ -905,26 +1460,45 @@ app.get('/stream-link', async (req, res) => {
   }
   
   try {
-    // The cmd might contain a full URL with "auto " prefix
-    // Extract the actual stream URL from cmd
+    // The cmd might contain a full URL with "auto " prefix (channels)
+    // OR it might be a direct VOD URL
     let streamUrl = cmd;
+    let isVOD = false;
     
-    // If cmd starts with "auto ", extract the URL part
+    // If cmd starts with "auto ", it's a channel stream - extract URL
     if (cmd.startsWith('auto ')) {
       streamUrl = cmd.substring(5); // Remove "auto " prefix
-      console.log(`✅ Extracted URL from auto command: ${streamUrl}`);
+      console.log(`✅ Extracted channel URL from auto command: ${streamUrl}`);
+    } 
+    // Otherwise treat as direct URL
+    else {
+      streamUrl = cmd;
     }
     
-    // Ensure URL uses http (not https) to avoid mixed-content issues
-    if (streamUrl.startsWith('https://')) {
-      streamUrl = streamUrl.replace('https://', 'http://');
+    // Check if this is a VOD URL (contains /vod? or movieId parameter)
+    if (streamUrl.includes('/vod?') || streamUrl.includes('movieId=')) {
+      isVOD = true;
+      console.log(`✅ Detected VOD URL: ${streamUrl}`);
     }
     
     console.log(`✅ Final stream URL: ${streamUrl}`);
+    console.log(`📺 Stream type: ${isVOD ? 'VOD (direct m3u8)' : 'Channel (needs proxy)'}`);
     
+    // For VOD items, return direct URL (they support HTTPS and CORS)
+    if (isVOD) {
+      console.log(`✅ VOD stream - returning direct URL (no proxy needed)`);
+      return res.json({
+        status: 'ok',
+        url: streamUrl,
+        cmd: cmd,
+        direct: true
+      });
+    }
+    
+    // For channel streams, use proxy to avoid CORS/mixed-content issues
     // Return a relative proxy URL - frontend will prepend its own origin (always HTTPS on Render)
     const proxiedUrl = `/proxy-stream?url=${encodeURIComponent(streamUrl)}`;
-    console.log(`✅ Proxied URL for frontend: ${proxiedUrl}`);
+    console.log(`✅ Channel stream - using proxy: ${proxiedUrl}`);
     
     return res.json({
       status: 'ok',
@@ -937,6 +1511,358 @@ app.get('/stream-link', async (req, res) => {
     res.json({
       status: 'error',
       message: error.message
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FAVORITES ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Get all favorite channels
+app.get('/favorites/channels', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('⭐ Received request for: /favorites/channels');
+  console.log('═'.repeat(70));
+
+  try {
+    const portalData = await callPortalAPIWithAuth('get_all_fav_channels', {
+      fav: '1',
+      force_ch_link_check: 0
+    });
+
+    // Handle both response structures
+    const favChannels = portalData?.js?.data || portalData?.data || [];
+    console.log(`✅ Retrieved ${favChannels.length} favorite channels`);
+
+    res.json({
+      status: 'ok',
+      favorites: favChannels
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get favorite channels: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Get favorite channel IDs
+app.get('/favorites/channels/ids', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('⭐ Received request for: /favorites/channels/ids');
+  console.log('═'.repeat(70));
+
+  try {
+    const favIds = await callPortalAPIWithAuth('get_fav_ids', {});
+    // Handle both response structures - might be direct array or nested in js
+    const idsArray = favIds?.js || favIds || [];
+    console.log(`✅ Retrieved ${Array.isArray(idsArray) ? idsArray.length : 0} favorite IDs`);
+
+    res.json({
+      status: 'ok',
+      ids: Array.isArray(idsArray) ? idsArray : []
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get favorite IDs: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Add channel to favorites
+app.post('/favorites/channels/:channelId', async (req, res) => {
+  const { channelId } = req.params;
+  console.log('\n' + '═'.repeat(70));
+  console.log(`⭐ Adding channel ${channelId} to favorites`);
+  console.log('═'.repeat(70));
+
+  try {
+    const result = await callPortalAPIWithAuth('set_fav', {
+      ch_id: channelId,
+      fav: '1'
+    });
+
+    console.log(`✅ Added channel ${channelId} to favorites`);
+    res.json({
+      status: 'ok',
+      channelId: channelId,
+      favorite: true
+    });
+  } catch (error) {
+    console.error(`❌ Failed to add favorite: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Remove channel from favorites
+app.delete('/favorites/channels/:channelId', async (req, res) => {
+  const { channelId } = req.params;
+  console.log('\n' + '═'.repeat(70));
+  console.log(`⭐ Removing channel ${channelId} from favorites`);
+  console.log('═'.repeat(70));
+
+  try {
+    const result = await callPortalAPIWithAuth('set_fav', {
+      ch_id: channelId,
+      fav: '0'
+    });
+
+    console.log(`✅ Removed channel ${channelId} from favorites`);
+    res.json({
+      status: 'ok',
+      channelId: channelId,
+      favorite: false
+    });
+  } catch (error) {
+    console.error(`❌ Failed to remove favorite: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Get favorite VOD items
+app.get('/favorites/vod', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('⭐ Received request for: /favorites/vod');
+  console.log('═'.repeat(70));
+
+  try {
+    const portalData = await callPortalAPIWithAuth('get_ordered_list', {
+      type: 'vod',
+      fav: '1',
+      sortby: 'added',
+      p: '1'
+    });
+
+    // Handle nested response structure: js.data
+    const favVOD = portalData?.js?.data || portalData?.data || [];
+    console.log(`✅ Retrieved ${favVOD.length} favorite VOD items`);
+
+    res.json({
+      status: 'ok',
+      favorites: favVOD
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get favorite VOD: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Toggle VOD favorite
+app.post('/favorites/vod/:videoId', async (req, res) => {
+  const { videoId } = req.params;
+  const { favorite } = req.body;
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`⭐ ${favorite ? 'Adding' : 'Removing'} VOD ${videoId} ${favorite ? 'to' : 'from'} favorites`);
+  console.log('═'.repeat(70));
+
+  try {
+    const result = await callPortalAPIWithAuth('set_fav', {
+      video_id: videoId,
+      fav: favorite ? '1' : '0'
+    });
+
+    console.log(`✅ Updated VOD ${videoId} favorite status`);
+    res.json({
+      status: 'ok',
+      videoId: videoId,
+      favorite: favorite
+    });
+  } catch (error) {
+    console.error(`❌ Failed to update VOD favorite: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// EPG ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Get EPG data for all channels (6-hour blocks)
+app.get('/epg', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('📺 Received request for: /epg');
+  console.log('═'.repeat(70));
+
+  try {
+    const period = req.query.period || 6; // Hours of EPG data
+    
+    const portalData = await callPortalAPIWithAuth('get_epg_info', {
+      period: period
+    });
+
+    // Handle both response structures
+    const epgData = portalData?.js?.data || portalData?.data || {};
+    console.log(`✅ Retrieved EPG data for ${period} hours`);
+    
+    res.json({
+      status: 'ok',
+      epg: epgData
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get EPG data: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// Get short EPG for specific channel
+app.get('/epg/:channelId', async (req, res) => {
+  const { channelId } = req.params;
+  console.log('\n' + '═'.repeat(70));
+  console.log(`📺 Received request for: /epg/${channelId}`);
+  console.log('═'.repeat(70));
+
+  try {
+    const portalData = await callPortalAPIWithAuth('get_short_epg', {
+      ch_id: channelId
+    });
+
+    // Handle both response structures
+    const programs = portalData?.js?.data || portalData?.data || [];
+    console.log(`✅ Retrieved ${programs.length} programs for channel ${channelId}`);
+    
+    // Add current/next program info
+    const now = Math.floor(Date.now() / 1000);
+    const currentProgram = programs.find(p => p.start_timestamp <= now && p.stop_timestamp > now);
+    const nextProgram = programs.find(p => p.start_timestamp > now);
+
+    res.json({
+      status: 'ok',
+      channelId: channelId,
+      programs: programs,
+      current: currentProgram || null,
+      next: nextProgram || null
+    });
+  } catch (error) {
+    console.error(`❌ Failed to get EPG for channel: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message
+    });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════════════
+// SEARCH ENDPOINTS
+// ═══════════════════════════════════════════════════════════════════════════
+
+// Search across all content (channels, VOD, series)
+app.get('/search', async (req, res) => {
+  const { q, type } = req.query;
+  
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🔍 Search request: "${q}" in ${type || 'all'}`);
+  console.log('═'.repeat(70));
+
+  if (!q || q.length < 2) {
+    return res.json({
+      status: 'error',
+      message: 'Search query must be at least 2 characters',
+      results: []
+    });
+  }
+
+  try {
+    const results = {
+      channels: [],
+      vod: [],
+      series: []
+    };
+
+    // Search in channels if requested or "all"
+    if (!type || type === 'all' || type === 'channels') {
+      try {
+        const channelData = await callPortalAPIWithAuth('get_all_channels', {
+          search: q
+        });
+        results.channels = channelData?.data || [];
+        console.log(`✅ Found ${results.channels.length} channels`);
+      } catch (error) {
+        console.error(`⚠️  Channel search failed: ${error.message}`);
+      }
+    }
+
+    // Search in VOD if requested or "all"
+    if (!type || type === 'all' || type === 'vod') {
+      try {
+        const vodData = await callPortalAPIWithAuth('get_ordered_list', {
+          type: 'vod',
+          search: q,
+          sortby: 'added',
+          p: '1'
+        });
+        // Handle nested response structure: js.data
+        results.vod = vodData?.js?.data || vodData?.data || [];
+        console.log(`✅ Found ${results.vod.length} VOD items`);
+        if (results.vod.length > 0) {
+          console.log(`📝 First VOD result:`, results.vod[0].name);
+        }
+      } catch (error) {
+        console.error(`⚠️  VOD search failed: ${error.message}`);
+      }
+    }
+
+    // Search in Series if requested or "all"
+    if (!type || type === 'all' || type === 'series') {
+      try {
+        const seriesData = await callPortalAPIWithAuth('get_ordered_list', {
+          type: 'series',
+          search: q,
+          sortby: 'added',
+          p: '1'
+        });
+        // Handle nested response structure: js.data
+        results.series = seriesData?.js?.data || seriesData?.data || [];
+        console.log(`✅ Found ${results.series.length} series`);
+        if (results.series.length > 0) {
+          console.log(`📝 First series result:`, results.series[0].name);
+          console.log(`🆔 First series ID fields:`, {
+            id: results.series[0].id,
+            video_id: results.series[0].video_id,
+            series_id: results.series[0].series_id,
+            category_id: results.series[0].category_id
+          });
+          console.log(`📦 FULL first series object:`, JSON.stringify(results.series[0], null, 2));
+        }
+      } catch (error) {
+        console.error(`⚠️  Series search failed: ${error.message}`);
+      }
+    }
+
+    const totalResults = results.channels.length + results.vod.length + results.series.length;
+    console.log(`🎯 Total results: ${totalResults}`);
+
+    res.json({
+      status: 'ok',
+      query: q,
+      totalResults: totalResults,
+      results: results
+    });
+  } catch (error) {
+    console.error(`❌ Search failed: ${error.message}`);
+    res.status(500).json({
+      status: 'error',
+      message: error.message,
+      results: { channels: [], vod: [], series: [] }
     });
   }
 });
