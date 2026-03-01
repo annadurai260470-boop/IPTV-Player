@@ -1442,6 +1442,96 @@ app.get('/channels/:categoryId', async (req, res) => {
   });
 });
 
+// ─── Radio routes ──────────────────────────────────────────────────────────
+
+app.get('/radio', async (req, res) => {
+  console.log('\n' + '═'.repeat(70));
+  console.log('🎵 Received request for: /radio');
+  console.log('═'.repeat(70));
+  try {
+    const profileData = await getPortalUserProfile();
+    if (!profileData) throw new Error('Auth failed');
+
+    const portalData = await callPortalAPIWithAuth('get_genres', { type: 'radio' });
+
+    if (portalData && portalData.js && Array.isArray(portalData.js) && portalData.js.length > 0) {
+      const items = portalData.js
+        .filter(cat => cat.id !== '*')
+        .map(cat => ({
+          id: cat.id,
+          title: cat.title,
+          alias: cat.alias,
+          poster: cat.poster || ''
+        }));
+      console.log(`✅ Sending ${items.length} radio categories to frontend`);
+      return res.json({ status: 'ok', source: 'portal', channels: items });
+    }
+  } catch (error) {
+    console.error(`❌ Failed to fetch radio categories: ${error.message}`);
+  }
+  res.json({ status: 'ok', source: 'portal', channels: [] });
+});
+
+app.get('/radio/:categoryId', async (req, res) => {
+  const { categoryId } = req.params;
+  console.log('\n' + '═'.repeat(70));
+  console.log(`🎵 Received request for: /radio/${categoryId}`);
+  console.log('═'.repeat(70));
+  try {
+    const profileData = await getPortalUserProfile();
+    if (!profileData) throw new Error('Auth failed');
+
+    const firstPageData = await callPortalAPIWithAuth('get_ordered_list', {
+      type: 'radio',
+      genre: categoryId,
+      p: '1',
+      max_page_items: '14',
+      sortby: 'number',
+      fav: '0'
+    });
+
+    const channelsArray = firstPageData?.js?.data || firstPageData?.js || [];
+    if (!channelsArray || !Array.isArray(channelsArray) || channelsArray.length === 0) {
+      return res.json({ status: 'ok', source: 'portal', categoryId, channels: [] });
+    }
+
+    let allChannels = [...channelsArray];
+    const paginationInfo = firstPageData?.js || {};
+    const totalItems = parseInt(paginationInfo.total_items || 0);
+    const pageSize   = parseInt(paginationInfo.max_page_items || 14);
+    const totalPages = Math.ceil(totalItems / pageSize);
+
+    if (totalPages > 1) {
+      for (let page = 2; page <= totalPages; page++) {
+        const pageData = await callPortalAPIWithAuth('get_ordered_list', {
+          type: 'radio',
+          genre: categoryId,
+          p: String(page),
+          max_page_items: '14',
+          sortby: 'number',
+          fav: '0'
+        });
+        const pageChannels = pageData?.js?.data || pageData?.js || [];
+        if (pageChannels && Array.isArray(pageChannels) && pageChannels.length > 0) {
+          allChannels = allChannels.concat(pageChannels);
+        }
+      }
+    }
+
+    const mapped = allChannels.map(ch => ({
+      ...ch,
+      icon:   ch.logo || ch.icon,
+      poster: ch.logo || ch.icon || ch.poster
+    }));
+
+    console.log(`✅ Sending ${mapped.length} radio stations to frontend`);
+    return res.json({ status: 'ok', source: 'portal', categoryId, channels: mapped });
+  } catch (error) {
+    console.error(`❌ Failed to fetch radio stations: ${error.message}`);
+  }
+  res.json({ status: 'ok', source: 'portal', categoryId, channels: [] });
+});
+
 // Create stream link for a channel - Direct stream request
 app.get('/stream-link', async (req, res) => {
   const { cmd } = req.query;
@@ -1482,23 +1572,11 @@ app.get('/stream-link', async (req, res) => {
     }
     
     console.log(`✅ Final stream URL: ${streamUrl}`);
-    console.log(`📺 Stream type: ${isVOD ? 'VOD (direct m3u8)' : 'Channel (needs proxy)'}`);
+    console.log(`📺 Stream type: ${isVOD ? 'VOD' : 'Channel'} — proxying through server`);
     
-    // For VOD items, return direct URL (they support HTTPS and CORS)
-    if (isVOD) {
-      console.log(`✅ VOD stream - returning direct URL (no proxy needed)`);
-      return res.json({
-        status: 'ok',
-        url: streamUrl,
-        cmd: cmd,
-        direct: true
-      });
-    }
-    
-    // For channel streams, use proxy to avoid CORS/mixed-content issues
-    // Return a relative proxy URL - frontend will prepend its own origin (always HTTPS on Render)
+    // Always proxy through server to avoid CORS / mixed-content issues
     const proxiedUrl = `/proxy-stream?url=${encodeURIComponent(streamUrl)}`;
-    console.log(`✅ Channel stream - using proxy: ${proxiedUrl}`);
+    console.log(`✅ Using proxy for ${isVOD ? 'VOD' : 'Channel'} stream: ${proxiedUrl}`);
     
     return res.json({
       status: 'ok',
@@ -1919,10 +1997,12 @@ app.get('/proxy-stream', async (req, res) => {
     }
     
     // Set response headers BEFORE piping data
-    const contentType = response.headers.get('content-type') || 'video/mp2t';
+    const contentType = response.headers.get('content-type') || 'application/octet-stream';
     res.setHeader('Content-Type', contentType);
     res.setHeader('Cache-Control', 'public, max-age=3600');
     res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Length, Content-Range, Accept-Ranges');
+    res.setHeader('Accept-Ranges', 'bytes');
     
     // Forward content-length if available
     if (response.headers.get('content-length')) {

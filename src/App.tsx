@@ -6,11 +6,12 @@ import { VideoPlayer } from './components/VideoPlayer'
 import SearchBar from './components/SearchBar'
 import { useFavorites, FavoriteItem } from './hooks/useFavorites'
 import { useWatchHistory } from './hooks/useWatchHistory'
-import { fetchChannelCategories, fetchChannelsByCategory, fetchVOD, fetchSeries, fetchVODByCategory, fetchSeriesByCategory, createStreamLink, fetchSeriesSeasons, fetchSeriesEpisodes, fetchEpisodeDetails } from './api/index'
+import { fetchChannelCategories, fetchChannelsByCategory, fetchVOD, fetchSeries, fetchVODByCategory, fetchSeriesByCategory, fetchRadioCategories, fetchRadioByCategory, createStreamLink, fetchSeriesSeasons, fetchSeriesEpisodes, fetchEpisodeDetails } from './api/index'
 import { Channel, VODItem, Episode } from './types/index'
+import { t, tc } from './i18n'
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'channels' | 'movies' | 'series' | 'favorites'>('movies')
+  const [activeTab, setActiveTab] = useState<'channels' | 'movies' | 'series' | 'favorites' | 'radio'>('favorites')
   const { favorites, isFavorite, toggleFavorite, clearFavorites } = useFavorites()
   const { history, addToHistory, removeFromHistory, clearHistory } = useWatchHistory()
   const [channelCategories, setChannelCategories] = useState<Channel[]>([])
@@ -32,6 +33,12 @@ function App() {
   const [showEpisodes, setShowEpisodes] = useState(false)
   const [loadingItem, setLoadingItem] = useState<string | number | null>(null)
 
+  // Radio state
+  const [radioCategories, setRadioCategories]           = useState<Channel[]>([])
+  const [selectedRadioCategory, setSelectedRadioCategory] = useState<Channel | null>(null)
+  const [radioStations, setRadioStations]               = useState<Channel[]>([])
+  const [radioLoading, setRadioLoading]                 = useState(false)
+
   // Load VOD and Series on initial mount
   useEffect(() => {
     loadVOD()
@@ -43,15 +50,47 @@ function App() {
     if (activeTab === 'channels' && channelCategories.length === 0 && !selectedChannelCategory) {
       loadChannelCategories()
     }
+    if (activeTab === 'radio' && radioCategories.length === 0 && !selectedRadioCategory) {
+      loadRadioCategories()
+    }
   }, [activeTab])
 
-  const handleTabChange = (tab: 'channels' | 'movies' | 'series' | 'favorites') => {
+  // ── Auto-navigate to Tamil category ──────────────────────────
+  const findTamil = <T extends { title?: string; name?: string }>(list: T[]): T | undefined =>
+    list.find(c => (c.title || c.name || '').toLowerCase().includes('tamil'))
+
+  // Movies tab: navigate into Tamil movies when categories are available
+  useEffect(() => {
+    if (activeTab === 'movies' && vodContent.length > 0 && !selectedVODCategory) {
+      const cat = findTamil(vodContent)
+      if (cat) loadVODItemsForCategory(cat)
+    }
+  }, [vodContent, activeTab])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Series tab: navigate into Tamil series when categories are available
+  useEffect(() => {
+    if (activeTab === 'series' && seriesContent.length > 0 && !selectedVODCategory) {
+      const cat = findTamil(seriesContent)
+      if (cat) loadVODItemsForCategory(cat)
+    }
+  }, [seriesContent, activeTab])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Channels tab: navigate into Tamil channels when categories are available
+  useEffect(() => {
+    if (activeTab === 'channels' && channelCategories.length > 0 && !selectedChannelCategory) {
+      const cat = findTamil(channelCategories)
+      if (cat) loadChannelsForCategory(cat)
+    }
+  }, [channelCategories, activeTab])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleTabChange = (tab: 'channels' | 'movies' | 'series' | 'favorites' | 'radio') => {
     setActiveTab(tab)
-    if (tab === 'channels') {
+    if (tab === 'channels' || tab === 'radio') {
       handleBackToVODCategories()
     } else {
       handleBackToChannelCategories()
     }
+    if (tab !== 'radio') setSelectedRadioCategory(null)
   }
 
   const loadVOD = async () => {
@@ -122,6 +161,61 @@ function App() {
   const handleBackToChannelCategories = () => {
     setSelectedChannelCategory(null)
     setChannelsInCategory([])
+  }
+
+  const loadRadioCategories = async () => {
+    setRadioLoading(true)
+    try {
+      const data = await fetchRadioCategories()
+      setRadioCategories(data)
+    } catch (error) {
+      console.error('Error loading radio categories:', error)
+    } finally {
+      setRadioLoading(false)
+    }
+  }
+
+  const loadRadioStationsForCategory = async (category: Channel) => {
+    setRadioLoading(true)
+    setSelectedRadioCategory(category)
+    try {
+      const categoryId = typeof category.id === 'string' ? category.id : String(category.id)
+      const data = await fetchRadioByCategory(categoryId)
+      setRadioStations(data)
+    } catch (error) {
+      console.error('Error loading radio stations for category:', error)
+    } finally {
+      setRadioLoading(false)
+    }
+  }
+
+  const handleBackToRadioCategories = () => {
+    setSelectedRadioCategory(null)
+    setRadioStations([])
+  }
+
+  const handleSelectRadio = (channel: Channel) => {
+    if (!channel.cmd) {
+      loadRadioStationsForCategory(channel)
+    } else {
+      playRadioStation(channel)
+    }
+  }
+
+  const playRadioStation = async (channel: Channel) => {
+    if (!channel.cmd) return
+    const streamUrl = await createStreamLink(channel.cmd)
+    if (streamUrl) {
+      const title = channel.name || channel.title || t('tab_radio')
+      setSelectedItem({ title, url: streamUrl })
+      addToHistory({
+        id: `radio-${channel.id}`,
+        title,
+        image: channel.logo || channel.icon || channel.poster || '',
+        type: 'channel',
+        url: streamUrl,
+      })
+    }
   }
 
   const loadVODItemsForCategory = async (category: VODItem) => {
@@ -218,7 +312,7 @@ function App() {
 
     if (!seriesId || seriesId === '0' || seriesId === 0) {
       console.error('❌ Series ID is invalid:', seriesId)
-      alert('Series ID not found or invalid')
+      alert(t('err_series_id_invalid'))
       return
     }
 
@@ -233,11 +327,11 @@ function App() {
         setSeasons(seasonsData)
         setShowSeasons(true)
       } else {
-        alert(`No seasons found for "${item.name}"`)
+        alert(t('err_no_seasons'))
       }
     } catch (error) {
       console.error('Error fetching seasons:', error)
-      alert('Failed to load seasons')
+      alert(t('err_seasons_failed'))
     } finally {
       setLoadingItem(null)
     }
@@ -260,11 +354,11 @@ function App() {
         setShowEpisodes(true)
         setShowSeasons(false)
       } else {
-        alert('No episodes found for this season')
+        alert(t('err_no_episodes_season'))
       }
     } catch (error) {
       console.error('Error fetching episodes:', error)
-      alert('Failed to load episodes')
+      alert(t('err_episodes_failed'))
     } finally {
       setLoadingItem(null)
     }
@@ -283,13 +377,13 @@ function App() {
       const episodeDetails = await fetchEpisodeDetails(seriesId, seasonId, episodeId, categoryId)
       
       if (!episodeDetails) {
-        alert('Failed to load episode details')
+        alert(t('err_episode_details'))
         return
       }
       
       const cmd = episodeDetails.cmd || episodeDetails.commands
       if (!cmd) {
-        alert('Episode stream URL not available')
+        alert(t('err_episode_stream_na'))
         return
       }
       
@@ -302,11 +396,11 @@ function App() {
           url: streamUrl
         })
       } else {
-        alert('Failed to create stream link')
+        alert(t('err_stream_failed'))
       }
     } catch (error) {
       console.error('Error playing episode:', error)
-      alert('Failed to play episode')
+      alert(t('err_episode_play'))
     } finally {
       setLoadingItem(null)
     }
@@ -350,32 +444,38 @@ function App() {
         <div className="header-content">
           <div className="logo">
             <span className="logo-icon">▶</span>
-            <h1>IPTV Player</h1>
+            <h1>{t('app_title')}</h1>
           </div>
           <nav className="nav-tabs">
             <button
               className={`tab-button ${activeTab === 'channels' ? 'active' : ''}`}
               onClick={() => handleTabChange('channels')}
             >
-              📡 Channels
+              📡 {t('tab_channels')}
             </button>
             <button
               className={`tab-button ${activeTab === 'movies' ? 'active' : ''}`}
               onClick={() => handleTabChange('movies')}
             >
-              🎬 Movies
+              🎬 {t('tab_movies')}
             </button>
             <button
               className={`tab-button ${activeTab === 'series' ? 'active' : ''}`}
               onClick={() => handleTabChange('series')}
             >
-              📺 Series
+              📺 {t('tab_series')}
             </button>
             <button
               className={`tab-button ${activeTab === 'favorites' ? 'active' : ''}`}
               onClick={() => handleTabChange('favorites')}
             >
-              ❤️ Favourites {favorites.length > 0 && <span className="tab-badge">{favorites.length}</span>}
+              ❤️ {t('tab_favorites')} {favorites.length > 0 && <span className="tab-badge">{favorites.length}</span>}
+            </button>
+            <button
+              className={`tab-button ${activeTab === 'radio' ? 'active' : ''}`}
+              onClick={() => handleTabChange('radio')}
+            >
+              🎵 {t('tab_radio')}
             </button>
           </nav>
           <div className="header-search">
@@ -392,8 +492,8 @@ function App() {
         {history.length > 0 && activeTab !== 'favorites' && (
           <div className="continue-watching">
             <div className="section-row-header">
-              <h2 className="section-row-title">🕐 Continue Watching</h2>
-              <button className="clear-history-btn" onClick={clearHistory}>Clear all</button>
+              <h2 className="section-row-title">🕐 {t('continue_watching')}</h2>
+              <button className="clear-history-btn" onClick={clearHistory}>{t('clear_all')}</button>
             </div>
             <div className="cw-scroll">
               {history.map(h => (
@@ -418,10 +518,10 @@ function App() {
             </div>
           </div>
         )}
-        {(loading && (activeTab === 'movies' || activeTab === 'series')) || (channelsLoading && activeTab === 'channels') || vodLoading ? (
+        {(loading && (activeTab === 'movies' || activeTab === 'series')) || (channelsLoading && activeTab === 'channels') || vodLoading || (radioLoading && activeTab === 'radio') ? (
           <div className="loading">
             <div className="spinner"></div>
-            <p>Loading {activeTab === 'channels' ? 'channels' : vodLoading ? 'content' : activeTab}...</p>
+            <p>{activeTab === 'channels' ? t('loading_channels') : vodLoading ? t('loading_content') : activeTab === 'movies' ? t('loading_movies') : activeTab === 'radio' ? t('loading_radio') : t('loading_series')}</p>
           </div>
         ) : (
           <>
@@ -429,7 +529,7 @@ function App() {
               <>
                 {selectedChannelCategory && (
                   <div className="section-header">
-                    <button className="back-btn" onClick={handleBackToChannelCategories}>← Back</button>
+                    <button className="back-btn" onClick={handleBackToChannelCategories}>{t('back')}</button>
                     <h2 className="section-title">{selectedChannelCategory.title || selectedChannelCategory.name}</h2>
                   </div>
                 )}
@@ -442,6 +542,7 @@ function App() {
                   onToggleFavorite={toggleFavorite}
                   isFavorite={isFavorite}
                   showSortControls={!!selectedChannelCategory}
+                  recentIds={history.filter(h => h.type === 'channel').sort((a, b) => b.watchedAt - a.watchedAt).map(h => h.id.replace(/^ch-/, ''))}
                 />
               </>
             )}
@@ -449,7 +550,7 @@ function App() {
               <>
                 {selectedVODCategory && (
                   <div className="section-header">
-                    <button className="back-btn" onClick={handleBackToVODCategories}>← Back</button>
+                    <button className="back-btn" onClick={handleBackToVODCategories}>{t('back')}</button>
                     <h2 className="section-title">{selectedVODCategory.name || selectedVODCategory.title}</h2>
                   </div>
                 )}
@@ -470,7 +571,7 @@ function App() {
               <>
                 {selectedVODCategory && (
                   <div className="section-header">
-                    <button className="back-btn" onClick={handleBackToVODCategories}>← Back</button>
+                    <button className="back-btn" onClick={handleBackToVODCategories}>{t('back')}</button>
                     <h2 className="section-title">{selectedVODCategory.name || selectedVODCategory.title}</h2>
                   </div>
                 )}
@@ -490,9 +591,9 @@ function App() {
             {activeTab === 'favorites' && (
               <>
                 <div className="section-header" style={{ justifyContent: 'space-between' }}>
-                  <h2 className="section-title">❤️ My Favourites</h2>
+                  <h2 className="section-title">❤️ {t('my_favorites')}</h2>
                   {favorites.length > 0 && (
-                    <button className="clear-history-btn" onClick={clearFavorites}>Clear all</button>
+                    <button className="clear-history-btn" onClick={clearFavorites}>{t('clear_all')}</button>
                   )}
                 </div>
                 <ChannelGrid
@@ -507,6 +608,26 @@ function App() {
                   onToggleFavorite={toggleFavorite}
                   isFavorite={isFavorite}
                   showSortControls={favorites.length > 1}
+                />
+              </>
+            )}
+            {activeTab === 'radio' && (
+              <>
+                {selectedRadioCategory && (
+                  <div className="section-header">
+                    <button className="back-btn" onClick={handleBackToRadioCategories}>{t('back')}</button>
+                    <h2 className="section-title">{selectedRadioCategory.title || selectedRadioCategory.name}</h2>
+                  </div>
+                )}
+                <ChannelGrid
+                  channels={selectedRadioCategory ? radioStations : radioCategories}
+                  onSelectChannel={selectedRadioCategory ? handleSelectRadio : (cat) => loadRadioStationsForCategory(cat)}
+                  type="channels"
+                  isCategory={!selectedRadioCategory}
+                  categoryType="channels"
+                  onToggleFavorite={toggleFavorite}
+                  isFavorite={isFavorite}
+                  showSortControls={!!selectedRadioCategory}
                 />
               </>
             )}
@@ -530,13 +651,13 @@ function App() {
         <div className="search-results-overlay" onClick={() => setShowSeasons(false)}>
           <div className="search-results-container" onClick={(e) => e.stopPropagation()}>
             <div className="search-results-header">
-              <h2>📺 {selectedSeries.name} - Seasons</h2>
+              <h2>📺 {selectedSeries.name} - {t('seasons')}</h2>
               <button className="close-button" onClick={() => setShowSeasons(false)}>✕</button>
             </div>
             
             <div className="search-results-content">
               <div className="search-results-summary">
-                Found {seasons.length} season{seasons.length !== 1 ? 's' : ''}
+                {tc(seasons.length, 'season')} {t('found')}
               </div>
 
               <div className="search-section">
@@ -552,7 +673,7 @@ function App() {
                       ) : season.screenshot_uri || season.cover_big ? (
                         <img 
                           src={season.screenshot_uri || season.cover_big} 
-                          alt={season.name || `Season ${index + 1}`} 
+                          alt={season.name || `${t('unnamed_season')} ${index + 1}`} 
                           className="search-result-poster" 
                         />
                       ) : (
@@ -560,11 +681,11 @@ function App() {
                       )}
                       <div className="search-result-info">
                         <div className="search-result-name">
-                          {season.series || season.name || `Season ${index + 1}`}
+                          {season.series || season.name || `${t('unnamed_season')} ${index + 1}`}
                         </div>
                         {season.o_name && (
                           <div className="search-result-meta">
-                            {loadingItem === season.id ? 'Loading episodes...' : season.o_name}
+                            {loadingItem === season.id ? t('loading_episodes') : season.o_name}
                           </div>
                         )}
                       </div>
@@ -581,13 +702,13 @@ function App() {
         <div className="search-results-overlay" onClick={() => setShowEpisodes(false)}>
           <div className="search-results-container" onClick={(e) => e.stopPropagation()}>
             <div className="search-results-header">
-              <h2>🎬 {selectedSeries.name} - {selectedSeason.series || selectedSeason.name || 'Episodes'}</h2>
+              <h2>🎬 {selectedSeries.name} - {selectedSeason.series || selectedSeason.name || t('episodes')}</h2>
               <button className="close-button" onClick={() => setShowEpisodes(false)}>✕</button>
             </div>
             
             <div className="search-results-content">
               <div className="search-results-summary">
-                Found {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+                {tc(episodes.length, 'episode')} {t('found')}
               </div>
 
               <div className="search-section">
@@ -603,7 +724,7 @@ function App() {
                       ) : episode.screenshot_uri || episode.cover_big ? (
                         <img 
                           src={episode.screenshot_uri || episode.cover_big} 
-                          alt={episode.name || `Episode ${index + 1}`} 
+                          alt={episode.name || `${t('unnamed_episode')} ${index + 1}`} 
                           className="search-result-poster" 
                         />
                       ) : (
@@ -611,11 +732,11 @@ function App() {
                       )}
                       <div className="search-result-info">
                         <div className="search-result-name">
-                          {episode.name || `Episode ${index + 1}`}
+                          {episode.name || `${t('unnamed_episode')} ${index + 1}`}
                         </div>
                         {episode.o_name && (
                           <div className="search-result-meta">
-                            {loadingItem === episode.id ? 'Loading...' : episode.o_name}
+                            {loadingItem === episode.id ? t('loading_ellipsis') : episode.o_name}
                           </div>
                         )}
                       </div>

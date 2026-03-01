@@ -329,6 +329,26 @@ export interface SearchResults {
   };
 }
 
+export const fetchRadioCategories = async (): Promise<Channel[]> => {
+  try {
+    const response = await api.get('/radio');
+    return response.data.channels || [];
+  } catch (error) {
+    console.error('Error fetching radio categories:', error);
+    return [];
+  }
+};
+
+export const fetchRadioByCategory = async (categoryId: string): Promise<Channel[]> => {
+  try {
+    const response = await api.get(`/radio/${categoryId}`);
+    return response.data.channels || [];
+  } catch (error) {
+    console.error('Error fetching radio stations for category:', error);
+    return [];
+  }
+};
+
 export const searchContent = async (query: string, type?: 'all' | 'channels' | 'vod' | 'series'): Promise<SearchResults> => {
   try {
     console.log(`🔍 Searching for: "${query}" in ${type || 'all'}`);

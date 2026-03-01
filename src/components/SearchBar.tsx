@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { searchContent, SearchResults, createStreamLink, fetchSeriesSeasons, fetchSeriesEpisodes, fetchEpisodeDetails } from '../api/index';
 import { Channel, VODItem } from '../types/index';
 import '../styles/SearchBar.css';
+import { t, tc } from '../i18n';
 
 interface SearchBarProps {
   onResultsFound?: (results: SearchResults) => void;
@@ -23,7 +24,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
 
   const handleSearch = async () => {
     if (query.length < 2) {
-      alert('Please enter at least 2 characters');
+      alert(t('search_min_chars'));
       return;
     }
 
@@ -57,7 +58,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
     console.log('🔍 Selected channel:', channel);
     
     if (!channel.cmd) {
-      alert('Channel stream URL not available');
+      alert(t('err_no_channel_stream'));
       return;
     }
 
@@ -71,11 +72,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
           url: streamUrl
         });
       } else {
-        alert('Failed to create stream link');
+        alert(t('err_stream_failed'));
       }
     } catch (error) {
       console.error('Error playing channel:', error);
-      alert('Failed to play channel');
+      alert(t('err_channel_play'));
     } finally {
       setLoadingItem(null);
     }
@@ -88,13 +89,13 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
     const isSeries = (item as any).is_series === 1 || (item as any).is_series === '1';
     
     if (isSeries) {
-      alert(`"${item.name}" is a series. Please navigate to the Series tab to view episodes.`);
+      alert(t('err_series_navigate'));
       return;
     }
 
     // It's a movie - try to play it
     if (!item.cmd && !(item as any).cmd) {
-      alert('Movie stream URL not available');
+      alert(t('err_no_movie_stream'));
       return;
     }
 
@@ -109,11 +110,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
           url: streamUrl
         });
       } else {
-        alert('Failed to create stream link');
+        alert(t('err_stream_failed'));
       }
     } catch (error) {
       console.error('Error playing movie:', error);
-      alert('Failed to play movie');
+      alert(t('err_movie_play'));
     } finally {
       setLoadingItem(null);
     }
@@ -131,7 +132,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
     
     if (!seriesId || seriesId === '0' || seriesId === 0) {
       console.error('❌ Series ID is 0 or undefined!');
-      alert('Series ID not found or invalid');
+      alert(t('err_series_id_invalid'));
       return;
     }
     
@@ -149,11 +150,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
         setShowSeasons(true);
         setShowResults(false); // Close search results
       } else {
-        alert(`No seasons found for "${item.name}"`);
+        alert(`${t('err_no_seasons')}: "${item.name}"`);
       }
     } catch (error) {
       console.error('Error fetching seasons:', error);
-      alert('Failed to load seasons');
+      alert(t('err_seasons_failed'));
     } finally {
       setLoadingItem(null);
     }
@@ -175,7 +176,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
     console.log('🎬 Selected season:', season);
     
     if (!selectedSeries) {
-      alert('Series information not found');
+      alert(t('err_series_info_na'));
       return;
     }
 
@@ -196,11 +197,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
         setShowEpisodes(true);
         setShowSeasons(false); // Close seasons modal
       } else {
-        alert(`No episodes found for this season`);
+        alert(t('err_no_episodes_season'));
       }
     } catch (error) {
       console.error('Error fetching episodes:', error);
-      alert('Failed to load episodes');
+      alert(t('err_episodes_failed'));
     } finally {
       setLoadingItem(null);
     }
@@ -214,7 +215,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyPress={handleKeyPress}
-          placeholder="🔍 Search channels, movies, series..."
+          placeholder={`🔍 ${t('search_placeholder')}`}
           className="search-input"
           disabled={isSearching}
         />
@@ -231,18 +232,18 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
         <div className="search-results-overlay" onClick={closeResults}>
           <div className="search-results-container" onClick={(e) => e.stopPropagation()}>
             <div className="search-results-header">
-              <h2>Search Results for "{results.query}"</h2>
+              <h2>"{results.query}" {t('search_results_for')}</h2>
               <button className="close-button" onClick={closeResults}>✕</button>
             </div>
             
             <div className="search-results-content">
               <div className="search-results-summary">
-                Found {results.totalResults} results
+                {results.totalResults} {t('found')}
               </div>
 
               {results.results.channels.length > 0 && (
                 <div className="search-section">
-                  <h3>📺 Channels ({results.results.channels.length})</h3>
+                  <h3>📺 {t('search_channels')} ({results.results.channels.length})</h3>
                   <div className="search-results-grid">
                     {results.results.channels.slice(0, 10).map((channel) => (
                       <div 
@@ -258,7 +259,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                         <div className="search-result-info">
                           <div className="search-result-name">{channel.name}</div>
                           <div className="search-result-meta">
-                            {loadingItem === channel.id ? 'Loading...' : `Channel #${channel.number}`}
+                            {loadingItem === channel.id ? t('loading_ellipsis') : `சேனல் #${channel.number}`}
                           </div>
                         </div>
                       </div>
@@ -269,7 +270,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
 
               {results.results.vod.length > 0 && (
                 <div className="search-section">
-                  <h3>🎬 Movies ({results.results.vod.length})</h3>
+                  <h3>🎬 {t('search_movies')} ({results.results.vod.length})</h3>
                   <div className="search-results-grid">
                     {results.results.vod.slice(0, 10).map((item) => (
                       <div 
@@ -291,7 +292,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                         <div className="search-result-info">
                           <div className="search-result-name">{item.name}</div>
                           <div className="search-result-meta">
-                            {loadingItem === item.id ? 'Loading...' : (item.year || '')}
+                            {loadingItem === item.id ? t('loading_ellipsis') : (item.year || '')}
                           </div>
                         </div>
                       </div>
@@ -302,7 +303,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
 
               {results.results.series.length > 0 && (
                 <div className="search-section">
-                  <h3>📺 Series ({results.results.series.length})</h3>
+                  <h3>📺 {t('search_series')} ({results.results.series.length})</h3>
                   <div className="search-results-grid">
                     {results.results.series.slice(0, 10).map((item) => (
                       <div 
@@ -324,7 +325,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                         <div className="search-result-info">
                           <div className="search-result-name">{item.name}</div>
                           <div className="search-result-meta">
-                            {loadingItem === item.id ? 'Loading seasons...' : (item.year || '')}
+                            {loadingItem === item.id ? t('loading_seasons') : (item.year || '')}
                           </div>
                         </div>
                       </div>
@@ -335,8 +336,8 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
 
               {results.totalResults === 0 && (
                 <div className="no-results">
-                  <p>No results found for "{results.query}"</p>
-                  <p>Try a different search term</p>
+                  <p>"{results.query}" {t('search_no_results')}</p>
+                  <p>வேறு சொல்லை முயற்சிக்கவும்</p>
                 </div>
               )}
             </div>
@@ -348,13 +349,13 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
         <div className="search-results-overlay" onClick={closeSeasons}>
           <div className="search-results-container" onClick={(e) => e.stopPropagation()}>
             <div className="search-results-header">
-              <h2>📺 {selectedSeries.name} - Seasons</h2>
+              <h2>📺 {selectedSeries.name} - {t('seasons')}</h2>
               <button className="close-button" onClick={closeSeasons}>✕</button>
             </div>
             
             <div className="search-results-content">
               <div className="search-results-summary">
-                Found {seasons.length} season{seasons.length !== 1 ? 's' : ''}
+                {tc(seasons.length, 'season')} {t('found')}
               </div>
 
               <div className="search-section">
@@ -370,7 +371,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                       ) : season.screenshot_uri || season.cover_big ? (
                         <img 
                           src={season.screenshot_uri || season.cover_big} 
-                          alt={season.name || `Season ${index + 1}`} 
+                          alt={season.name || `${t('unnamed_season')} ${index + 1}`} 
                           className="search-result-poster" 
                         />
                       ) : (
@@ -378,11 +379,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                       )}
                       <div className="search-result-info">
                         <div className="search-result-name">
-                          {season.series || season.name || `Season ${index + 1}`}
+                          {season.series || season.name || `${t('unnamed_season')} ${index + 1}`}
                         </div>
                         {season.o_name && (
                           <div className="search-result-meta">
-                            {loadingItem === season.id ? 'Loading episodes...' : season.o_name}
+                            {loadingItem === season.id ? t('loading_episodes') : season.o_name}
                           </div>
                         )}
                       </div>
@@ -393,7 +394,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
 
               {seasons.length === 0 && (
                 <div className="no-results">
-                  <p>No seasons found</p>
+                  <p>சீசன்கள் ஏதுமில்லை</p>
                 </div>
               )}
             </div>
@@ -405,13 +406,13 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
         <div className="search-results-overlay" onClick={closeEpisodes}>
           <div className="search-results-container" onClick={(e) => e.stopPropagation()}>
             <div className="search-results-header">
-              <h2>🎬 {selectedSeries.name} - {selectedSeason.series || selectedSeason.name || 'Episodes'}</h2>
+              <h2>🎬 {selectedSeries.name} - {selectedSeason.series || selectedSeason.name || t('episodes')}</h2>
               <button className="close-button" onClick={closeEpisodes}>✕</button>
             </div>
             
             <div className="search-results-content">
               <div className="search-results-summary">
-                Found {episodes.length} episode{episodes.length !== 1 ? 's' : ''}
+                {tc(episodes.length, 'episode')} {t('found')}
               </div>
 
               <div className="search-section">
@@ -422,7 +423,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                       className={`search-result-item ${loadingItem === episode.id ? 'loading' : ''}`}
                       onClick={async () => {
                         if (!selectedSeries || !selectedSeason) {
-                          alert('Series or season information not found');
+                        alert(t('err_season_info_na'));
                           return;
                         }
 
@@ -441,7 +442,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                           const episodeDetails = await fetchEpisodeDetails(seriesId, seasonId, episodeId, categoryId);
                           
                           if (!episodeDetails) {
-                            alert('Failed to load episode details');
+                            alert(t('err_episode_details'));
                             return;
                           }
                           
@@ -449,7 +450,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                           
                           const cmd = episodeDetails.cmd || episodeDetails.commands;
                           if (!cmd) {
-                            alert('Episode stream URL not available');
+                            alert(t('err_episode_stream_na'));
                             return;
                           }
                           
@@ -460,15 +461,15 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                             console.log('✅ Stream URL created:', streamUrl);
                             closeEpisodes();
                             onPlayContent({
-                              title: `${selectedSeries.name} - ${episode.name || `Episode ${index + 1}`}`,
+                              title: `${selectedSeries.name} - ${episode.name || `${t('unnamed_episode')} ${index + 1}`}`,
                               url: streamUrl
                             });
                           } else {
-                            alert('Failed to create stream link');
+                            alert('நேரோடை உருவாக்க தோல்வியுற்றது');
                           }
                         } catch (error) {
                           console.error('Error playing episode:', error);
-                          alert('Failed to play episode');
+                          alert('அத்தியாயம் இயக்க தோல்வியுற்றது');
                         } finally {
                           setLoadingItem(null);
                         }
@@ -479,7 +480,7 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                       ) : episode.screenshot_uri || episode.cover_big ? (
                         <img 
                           src={episode.screenshot_uri || episode.cover_big} 
-                          alt={episode.name || `Episode ${index + 1}`} 
+                          alt={episode.name || `${t('unnamed_episode')} ${index + 1}`} 
                           className="search-result-poster" 
                         />
                       ) : (
@@ -487,11 +488,11 @@ export default function SearchBar({ onResultsFound, onPlayContent }: SearchBarPr
                       )}
                       <div className="search-result-info">
                         <div className="search-result-name">
-                          {episode.name || `Episode ${index + 1}`}
+                          {episode.name || `${t('unnamed_episode')} ${index + 1}`}
                         </div>
                         {episode.o_name && (
                           <div className="search-result-meta">
-                            {loadingItem === episode.id ? 'Loading...' : episode.o_name}
+                            {loadingItem === episode.id ? t('loading_ellipsis') : episode.o_name}
                           </div>
                         )}
                       </div>

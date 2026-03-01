@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react'
 import '../styles/VideoPlayer.css'
 import HLS from 'hls.js'
+import { t } from '../i18n'
 
 interface VideoPlayerProps {
   title:    string
@@ -263,13 +264,13 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
         onMouseMove={resetHideTimer}
       >
         {/* Close button */}
-        <button className="player-close" onClick={onClose} title="Close (Esc)">✕</button>
+        <button className="player-close" onClick={onClose} title={t('player_close')}>✕</button>
 
         {/* Loading */}
         {loading && !error && (
           <div className="player-status player-loading">
             <div className="player-spinner"></div>
-            <p>Loading stream…</p>
+            <p>{t('loading_stream')}</p>
           </div>
         )}
 
@@ -278,9 +279,9 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
           <div className="player-status player-error">
             <div className="error-icon">⚠️</div>
             <p>{error}</p>
-            <p className="player-error-hint">Try a different stream or check your connection</p>
+            <p className="player-error-hint">{t('player_error_hint')}</p>
             <button className="retry-btn" onClick={() => { setError(null); setLoading(true) }}>
-              ↺ Retry
+              {t('player_retry')}
             </button>
           </div>
         )}
@@ -296,7 +297,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
         <div className="player-controls-bar">
           {/* Title row */}
           <div className="ctrl-title-row">
-            <span className="ctrl-live-badge">{isLive ? '● LIVE' : '▶ PLAYING'}</span>
+            <span className="ctrl-live-badge">{isLive ? t('player_live_badge') : t('player_playing_badge')}</span>
             <span className="ctrl-title" title={title}>{title}</span>
           </div>
 
@@ -371,7 +372,7 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
 
         {/* Keyboard shortcut hint (shown briefly) */}
         <div className="player-shortcuts-hint">
-          Space: Play/Pause · ←/→: Seek 10s · ↑/↓: Volume · M: Mute · F: Fullscreen · Esc: Close
+          {t('player_shortcuts')}
         </div>
       </div>
     </div>
