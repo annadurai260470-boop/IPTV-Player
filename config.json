@@ -1,0 +1,22 @@
+{
+  "portal": {
+    "url": "http://tv.cloudcdn.me/portal.php",
+    "mac": "00:1A:79:44:5C:DB",
+    "token": "AAFA5EFF673835478D4EE0FF788CF1CA",
+    "prehash": "9d5ed25bde636a0bdbeb3ce148de680843588c04",
+    "deviceId": "D961F54187847888C7602D2C92A2F63C82F0A3E9C8A27FBBFB0A4E0E84AE7780",
+    "serialNumber": "4C0F829BB76F6",
+    "signature": "0BC2FE9EE8516627082EFD68BB871950FD21C189E348964A00C09E6879DA2DA9",
+    "maxConnections": 10000,
+    "expireDate": "2026-03-12 00:00:00",
+    "createdDate": "2020-11-23 16:11:08"
+  },
+  "server": {
+    "port": 5000,
+    "host": "localhost"
+  },
+  "api": {
+    "timeout": 10000,
+    "retries": 3
+  }
+}
