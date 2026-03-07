@@ -4,7 +4,7 @@
  *
  * Usage:
  *   import { t, tc } from '../i18n'
- *   t('app_title')          → 'ஐபிடிவி பிளேயர்'
+ *   t('app_title')          → 'ராணி டிவி பிளேயர்'
  *   tc(3, 'season')         → '3 சீசன்கள்'
  */
 
@@ -12,7 +12,7 @@
 const WORDS: Record<string, string> = {
 
   /* ── App shell ── */
-  app_title:              'ஐபிடிவி பிளேயர்',
+  app_title:              'ராணி டிவி பிளேயர்',
 
   /* ── Navigation tabs ── */
   tab_channels:           'சேனல்கள்',
@@ -20,6 +20,17 @@ const WORDS: Record<string, string> = {
   tab_series:             'தொடர்கள்',
   tab_favorites:          'பிடித்தவை',
   tab_radio:              'வானொலி',
+  tab_direct:             '▶ நேரடி இணைப்பு',
+
+  /* ── Direct play ── */
+  direct_placeholder:     'M3U8 / MP4 இணைப்பை இங்கே ஒட்டவும்...',
+  direct_play_btn:        'இப்போது இயக்கு',
+  direct_title:           'நேரடி இணைப்பு இயக்கி',
+  direct_hint:            'M3U8 அல்லது MP4 URL ஐ உள்ளிடவும்',
+  direct_saved_label:     'சேமிக்கப்பட்டது',
+  direct_change_btn:      'மாற்று',
+  direct_play_saved_btn:  'இயக்கு',
+  direct_clear_btn:       'அழிக்கு',
 
   /* ── Continue watching ── */
   continue_watching:      'தொடர்ந்து பார்க்கவும்',

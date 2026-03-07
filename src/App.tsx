@@ -6,12 +6,50 @@ import { VideoPlayer } from './components/VideoPlayer'
 import SearchBar from './components/SearchBar'
 import { useFavorites, FavoriteItem } from './hooks/useFavorites'
 import { useWatchHistory } from './hooks/useWatchHistory'
-import { fetchChannelCategories, fetchChannelsByCategory, fetchVOD, fetchSeries, fetchVODByCategory, fetchSeriesByCategory, fetchRadioCategories, fetchRadioByCategory, createStreamLink, fetchSeriesSeasons, fetchSeriesEpisodes, fetchEpisodeDetails } from './api/index'
+import { fetchChannelCategories, fetchChannelsByCategory, fetchVOD, fetchSeries, fetchVODByCategory, fetchSeriesByCategory, fetchRadioCategories, fetchRadioByCategory, createStreamLink, fetchSeriesSeasons, fetchSeriesEpisodes, fetchEpisodeDetails, fetchDirectUrl, saveDirectUrl } from './api/index'
 import { Channel, VODItem, Episode } from './types/index'
 import { t, tc } from './i18n'
 
 function App() {
-  const [activeTab, setActiveTab] = useState<'channels' | 'movies' | 'series' | 'favorites' | 'radio'>('favorites')
+  const [activeTab, setActiveTab] = useState<'channels' | 'movies' | 'series' | 'favorites' | 'radio' | 'direct'>('favorites')
+  const DIRECT_URL_KEY = 'iptv_direct_url'
+  const [directUrl, setDirectUrl] = useState(() => localStorage.getItem(DIRECT_URL_KEY) || '')
+  const [savedDirectUrl, setSavedDirectUrl] = useState(() => localStorage.getItem(DIRECT_URL_KEY) || '')
+  const [editingDirect, setEditingDirect] = useState(() => !localStorage.getItem(DIRECT_URL_KEY))
+
+  // On mount: fetch the shared URL from the server (works across all devices)
+  useEffect(() => {
+    fetchDirectUrl().then(url => {
+      if (url) {
+        localStorage.setItem(DIRECT_URL_KEY, url)
+        setSavedDirectUrl(url)
+        setDirectUrl(url)
+        setEditingDirect(false)
+        setActiveTab('direct')
+      } else {
+        // Fall back to local cache if server has nothing yet
+        const local = localStorage.getItem(DIRECT_URL_KEY)
+        if (local) {
+          setSavedDirectUrl(local)
+          setDirectUrl(local)
+          setEditingDirect(false)
+          setActiveTab('direct')
+          // Push local URL up to server so other devices get it too
+          saveDirectUrl(local)
+        }
+      }
+    })
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const playDirect = (url: string) => {
+    const trimmed = url.trim()
+    if (!trimmed) return
+    localStorage.setItem(DIRECT_URL_KEY, trimmed)
+    setSavedDirectUrl(trimmed)
+    setDirectUrl(trimmed)
+    setEditingDirect(false)
+    saveDirectUrl(trimmed)  // persist to server for all devices
+  }
   const { favorites, isFavorite, toggleFavorite, clearFavorites } = useFavorites()
   const { history, addToHistory, removeFromHistory, clearHistory } = useWatchHistory()
   const [channelCategories, setChannelCategories] = useState<Channel[]>([])
@@ -83,7 +121,7 @@ function App() {
     }
   }, [channelCategories, activeTab])  // eslint-disable-line react-hooks/exhaustive-deps
 
-  const handleTabChange = (tab: 'channels' | 'movies' | 'series' | 'favorites' | 'radio') => {
+  const handleTabChange = (tab: 'channels' | 'movies' | 'series' | 'favorites' | 'radio' | 'direct') => {
     setActiveTab(tab)
     if (tab === 'channels' || tab === 'radio') {
       handleBackToVODCategories()
@@ -454,6 +492,12 @@ function App() {
               📡 {t('tab_channels')}
             </button>
             <button
+              className={`tab-button ${activeTab === 'direct' ? 'active' : ''}`}
+              onClick={() => handleTabChange('direct')}
+            >
+              {t('tab_direct')}
+            </button>
+            <button
               className={`tab-button ${activeTab === 'movies' ? 'active' : ''}`}
               onClick={() => handleTabChange('movies')}
             >
@@ -470,12 +514,6 @@ function App() {
               onClick={() => handleTabChange('favorites')}
             >
               ❤️ {t('tab_favorites')} {favorites.length > 0 && <span className="tab-badge">{favorites.length}</span>}
-            </button>
-            <button
-              className={`tab-button ${activeTab === 'radio' ? 'active' : ''}`}
-              onClick={() => handleTabChange('radio')}
-            >
-              🎵 {t('tab_radio')}
             </button>
           </nav>
           <div className="header-search">
@@ -518,7 +556,67 @@ function App() {
             </div>
           </div>
         )}
-        {(loading && (activeTab === 'movies' || activeTab === 'series')) || (channelsLoading && activeTab === 'channels') || vodLoading || (radioLoading && activeTab === 'radio') ? (
+        {activeTab === 'direct' ? (
+          <div className="direct-play-section">
+            <h2 className="direct-play-title">{t('direct_title')}</h2>
+            {savedDirectUrl && !editingDirect ? (
+              <>
+                <VideoPlayer
+                  title={t('direct_title')}
+                  url={savedDirectUrl}
+                  onClose={() => {}}
+                  inline
+                />
+                <div className="direct-inline-controls">
+                  <span className="direct-saved-url" title={savedDirectUrl}>
+                    {savedDirectUrl.length > 70 ? savedDirectUrl.slice(0, 70) + '...' : savedDirectUrl}
+                  </span>
+                  <div className="direct-inline-btns">
+                    <button className="direct-change-btn" onClick={() => setEditingDirect(true)}>
+                      {t('direct_change_btn')}
+                    </button>
+                    <button className="direct-clear-btn" onClick={() => {
+                      localStorage.removeItem(DIRECT_URL_KEY)
+                      saveDirectUrl('')  // clear from server too
+                      setSavedDirectUrl('')
+                      setDirectUrl('')
+                      setEditingDirect(true)
+                    }}>
+                      {t('direct_clear_btn')}
+                    </button>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <>
+                <p className="direct-play-hint">{t('direct_hint')}</p>
+                <div className="direct-play-form">
+                  <input
+                    className="direct-url-input"
+                    type="url"
+                    value={directUrl}
+                    onChange={e => setDirectUrl(e.target.value)}
+                    placeholder={t('direct_placeholder')}
+                    autoFocus
+                    onKeyDown={e => { if (e.key === 'Enter') playDirect(directUrl) }}
+                  />
+                  <button
+                    className="direct-play-btn"
+                    disabled={!directUrl.trim()}
+                    onClick={() => playDirect(directUrl)}
+                  >
+                    {t('direct_play_btn')}
+                  </button>
+                  {savedDirectUrl && (
+                    <button className="direct-change-btn" onClick={() => { setDirectUrl(savedDirectUrl); setEditingDirect(false) }}>
+                      {t('back')}
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+        ) : (loading && (activeTab === 'movies' || activeTab === 'series')) || (channelsLoading && activeTab === 'channels') || vodLoading || (radioLoading && activeTab === 'radio') ? (
           <div className="loading">
             <div className="spinner"></div>
             <p>{activeTab === 'channels' ? t('loading_channels') : vodLoading ? t('loading_content') : activeTab === 'movies' ? t('loading_movies') : activeTab === 'radio' ? t('loading_radio') : t('loading_series')}</p>

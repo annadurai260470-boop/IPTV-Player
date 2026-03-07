@@ -2143,6 +2143,28 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(distPath, 'index.html'));
 });
 
+// ═══════════════════════════════════════════════════════════════════════════
+// DIRECT URL – shared across all devices
+// ═══════════════════════════════════════════════════════════════════════════
+const DIRECT_URL_FILE = path.join(__dirname, 'direct-url.json');
+
+function loadDirectUrl() {
+  try { return JSON.parse(fs.readFileSync(DIRECT_URL_FILE, 'utf8')).url || ''; } catch { return ''; }
+}
+function saveDirectUrlFile(url) {
+  try { fs.writeFileSync(DIRECT_URL_FILE, JSON.stringify({ url }), 'utf8'); } catch (_) {}
+}
+
+app.get('/direct-url', (req, res) => {
+  res.json({ url: loadDirectUrl() });
+});
+
+app.post('/direct-url', express.json(), (req, res) => {
+  const url = (req.body?.url || '').trim();
+  saveDirectUrlFile(url);
+  res.json({ status: 'ok', url });
+});
+
 app.listen(PORT, () => {
   console.log(`✓ Server running at http://localhost:${PORT}`);
 });

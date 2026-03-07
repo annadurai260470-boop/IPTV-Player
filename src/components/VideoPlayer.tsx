@@ -8,6 +8,7 @@ interface VideoPlayerProps {
   url:      string
   onClose:  () => void
   onProgress?: (progress: number) => void
+  inline?: boolean
 }
 
 function fmt(s: number): string {
@@ -20,7 +21,7 @@ function fmt(s: number): string {
     : `${m}:${String(ss).padStart(2,'0')}`
 }
 
-export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, onProgress }) => {
+export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, onProgress, inline }) => {
   const videoRef     = useRef<HTMLVideoElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const hlsRef       = useRef<HLS | null>(null)
@@ -203,7 +204,6 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
   const playNative = (streamUrl: string) => {
     const v = videoRef.current!
     v.src = streamUrl
-    v.crossOrigin = 'anonymous'
   }
 
   /* ─── Control actions ────────────────────────────────────── */
@@ -256,15 +256,15 @@ export const VideoPlayer: React.FC<VideoPlayerProps> = ({ title, url, onClose, o
   const volIcon = muted || volume === 0 ? '🔇' : volume < 0.5 ? '🔉' : '🔊'
 
   return (
-    <div className="video-player-overlay" onClick={onClose}>
+    <div className={inline ? 'video-player-inline-wrapper' : 'video-player-overlay'} onClick={inline ? undefined : onClose}>
       <div
         ref={containerRef}
-        className={`video-player-container ${showControls ? 'controls-visible' : 'controls-hidden'}`}
+        className={`video-player-container${inline ? ' video-player-inline' : ''} ${showControls ? 'controls-visible' : 'controls-hidden'}`}
         onClick={e => e.stopPropagation()}
         onMouseMove={resetHideTimer}
       >
-        {/* Close button */}
-        <button className="player-close" onClick={onClose} title={t('player_close')}>✕</button>
+        {/* Close button – hidden for inline mode */}
+        {!inline && <button className="player-close" onClick={onClose} title={t('player_close')}>✕</button>}
 
         {/* Loading */}
         {loading && !error && (

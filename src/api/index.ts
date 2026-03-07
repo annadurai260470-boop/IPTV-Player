@@ -188,6 +188,21 @@ export const createStreamLink = async (cmd: string): Promise<string | null> => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// DIRECT URL – shared across all devices
+// ═══════════════════════════════════════════════════════════════════════════
+
+export const fetchDirectUrl = async (): Promise<string> => {
+  try {
+    const res = await api.get('/direct-url');
+    return res.data.url || '';
+  } catch { return ''; }
+};
+
+export const saveDirectUrl = async (url: string): Promise<void> => {
+  try { await api.post('/direct-url', { url }); } catch (_) {}
+};
+
+// ═══════════════════════════════════════════════════════════════════════════
 // FAVORITES API
 // ═══════════════════════════════════════════════════════════════════════════
 

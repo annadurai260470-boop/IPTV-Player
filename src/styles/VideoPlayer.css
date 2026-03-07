@@ -31,6 +31,19 @@
   user-select: none;
 }
 
+/* Inline (embedded) player wrapper */
+.video-player-inline-wrapper {
+  width: 100%;
+}
+
+.video-player-inline {
+  width: 100% !important;
+  max-width: 100% !important;
+  aspect-ratio: 16 / 9;
+  border-radius: 12px;
+  box-shadow: 0 12px 48px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,.06);
+}
+
 /* Controls visibility */
 .video-player-container.controls-hidden .player-close { opacity: 0; pointer-events: none; }
 .video-player-container.controls-hidden .player-controls-bar { opacity: 0; pointer-events: none; }
@@ -307,8 +320,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255,255,255,0.08);
-  border: 1px solid rgba(255,255,255,0.1);
+  background: rgba(255,255,255,0.18);
+  border: 1px solid rgba(255,255,255,0.28);
   border-radius: var(--r-sm);
   color: #fff;
   cursor: pointer;

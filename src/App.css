@@ -371,3 +371,141 @@
   .nav-tabs { order: 2; margin-left: auto; }
   .logo h1 { font-size: var(--text-md); }
 }
+
+/* ── Direct Play Section ─────────────────────────────────── */
+.direct-play-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 24px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.direct-play-title {
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--text-primary, #fff);
+  margin: 0;
+}
+
+.direct-play-hint {
+  font-size: 0.95rem;
+  color: var(--text-secondary, #aaa);
+  margin: 0;
+}
+
+.direct-play-form {
+  display: flex;
+  gap: 12px;
+  width: 100%;
+  max-width: 680px;
+  flex-wrap: wrap;
+}
+
+.direct-url-input {
+  flex: 1;
+  min-width: 0;
+  padding: 14px 18px;
+  font-size: 1rem;
+  border-radius: 10px;
+  border: 2px solid var(--border-color, #444);
+  background: var(--surface, #1e1e2e);
+  color: var(--text-primary, #fff);
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.direct-url-input:focus {
+  border-color: var(--accent, #7c3aed);
+}
+
+.direct-play-btn {
+  padding: 14px 28px;
+  font-size: 1rem;
+  font-weight: 700;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent, #7c3aed);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, opacity 0.2s;
+  white-space: nowrap;
+}
+
+.direct-play-btn:hover:not(:disabled) {
+  background: var(--accent-hover, #6d28d9);
+}
+
+.direct-play-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.direct-saved-label {
+  font-size: 0.88rem;
+  color: var(--text-secondary, #aaa);
+  max-width: 680px;
+  text-align: center;
+  word-break: break-all;
+  margin: 0;
+}
+
+.direct-saved-url {
+  color: var(--accent, #7c3aed);
+  font-weight: 600;
+}
+
+.direct-change-btn {
+  padding: 14px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid var(--border-color, #444);
+  background: transparent;
+  color: var(--text-primary, #fff);
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+  white-space: nowrap;
+}
+
+.direct-change-btn:hover {
+  border-color: var(--accent, #7c3aed);
+  background: rgba(124,58,237,0.1);
+}
+
+.direct-clear-btn {
+  padding: 14px 20px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: 10px;
+  border: 2px solid #ef4444;
+  background: transparent;
+  color: #ef4444;
+  cursor: pointer;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.direct-clear-btn:hover {
+  background: rgba(239,68,68,0.12);
+}
+
+.direct-inline-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 0 4px;
+}
+
+.direct-inline-btns {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .direct-inline-controls { flex-direction: column; align-items: flex-start; }
